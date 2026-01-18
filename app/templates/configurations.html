@@ -1,7 +1,16 @@
 {% extends 'base.html' %}
 {% block content %}
 <div class="px-6 py-6">
-  <h1 class="text-2xl font-bold text-white mb-4">Configurations</h1>
+  <div class="flex items-center justify-between mb-4">
+    <h1 class="text-2xl font-bold text-white">Configurations</h1>
+    <a href="/configurations/import" 
+       class="inline-flex items-center gap-2 px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-sm transition-colors">
+      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+      </svg>
+      Import CSV
+    </a>
+  </div>
   <div class="flex flex-col md:flex-row md:items-center md:space-x-4 gap-2 mb-4">
     <select id="filter-agency" name="agency_id" class="bg-slate-800 border border-slate-700 rounded px-3 py-2 text-sm text-slate-200"
             hx-get="/api/configurations/list" hx-target="#config-list" hx-include="#filter-agency,#filter-function,#filter-status">

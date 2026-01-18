@@ -1,17 +1,32 @@
 <div id="configuration-{{ c.id }}" class="p-3 mb-2 rounded bg-slate-800 border border-slate-700" hx-target="#configuration-details">
   <div class="flex items-center justify-between">
-    <div class="cursor-pointer" hx-get="/api/configurations/{{ c.id }}/details">
+    <div class="cursor-pointer flex-1" hx-get="/api/configurations/{{ c.id }}/details">
       <div class="text-sm text-white font-medium">
         {{ c.agency.name if c.agency else ('Agency #' ~ c.agency_id) }} •
         {{ c.function.functional_area.name if c.function and c.function.functional_area else 'Functional Area' }} •
         {{ c.function.name if c.function else ('Function #' ~ c.function_id) }} •
         {{ c.component.name if c.component else ('Component #' ~ c.component_id) }}
       </div>
-      <div class="text-xs text-slate-400">Status: {{ c.status }}{% if c.version_label %} • Version: {{ c.version_label }}{% endif %}</div>
+      <div class="text-xs text-slate-400 mt-1">
+        Status: {{ c.status }}{% if c.version_label %} • Version: {{ c.version_label }}{% endif %}
+      </div>
+      {% if c.products %}
+      <div class="text-xs text-slate-300 mt-1 flex flex-wrap gap-x-3 gap-y-1">
+        {% for cp in c.products[:3] %}
+        <span class="inline-flex items-center">
+          <span class="text-blue-400">{{ cp.product.name }}</span>
+          {% if cp.product.vendor %}<span class="text-slate-500 ml-1">({{ cp.product.vendor.name }})</span>{% endif %}
+          {% if cp.product_version %}<span class="text-slate-500 ml-1">v{{ cp.product_version.version }}</span>{% endif %}
+        </span>
+        {% endfor %}
+        {% if c.products|length > 3 %}<span class="text-slate-500">+{{ c.products|length - 3 }} more</span>{% endif %}
+      </div>
+      {% endif %}
     </div>
-    <div class="flex space-x-2">
+    <div class="flex space-x-2 ml-3">
       <button class="text-xs px-2 py-1 bg-slate-700 hover:bg-slate-600 rounded" hx-get="/api/configurations/{{ c.id }}/form" hx-target="#configuration-{{ c.id }}" hx-swap="outerHTML">Edit</button>
       <button class="text-xs px-2 py-1 bg-slate-700 hover:bg-slate-600 rounded" hx-delete="/api/configurations/{{ c.id }}" hx-target="#configuration-{{ c.id }}" hx-swap="outerHTML">Delete</button>
     </div>
   </div>
 </div>
+

@@ -1,5 +1,7 @@
 # app/routes/configurations.py
-from flask import Blueprint, render_template, request, jsonify
+import csv
+from io import StringIO
+from flask import Blueprint, render_template, request, jsonify, Response
 from app import db
 from app.auth import login_required, get_updated_by
 from app.models.tran import (
@@ -9,6 +11,7 @@ from app.models.tran import (
 from app.forms.forms import (
     ConfigurationForm, ConfigurationProductForm, ProductForm, ProductVersionForm
 )
+from sqlalchemy.orm import joinedload
 from datetime import datetime
 
 config_bp = Blueprint('configurations', __name__)
@@ -76,7 +79,13 @@ def configurations_list():
     agency_id = request.args.get('agency_id', type=int)
     function_id = request.args.get('function_id', type=int)
     status = (request.args.get('status') or '').strip()
-    q = Configuration.query
+    q = Configuration.query.options(
+        joinedload(Configuration.agency),
+        joinedload(Configuration.function).joinedload(Function.functional_area),
+        joinedload(Configuration.component),
+        joinedload(Configuration.products).joinedload(ConfigurationProduct.product).joinedload(Product.vendor),
+        joinedload(Configuration.products).joinedload(ConfigurationProduct.product_version)
+    )
     if agency_id:
         q = q.filter(Configuration.agency_id == agency_id)
     if function_id:
@@ -485,3 +494,224 @@ def option_components():
     for c in components:
         html += f'<option value="{c.id}">{c.name}</option>'
     return html
+
+
+# --------- CSV Import ---------
+
+@config_bp.route('/configurations/import')
+@login_required
+def configurations_import_page():
+    """Show CSV import form."""
+    agencies = Agency.query.order_by(Agency.name.asc()).all()
+    return render_template('configurations_import.html', agencies=agencies)
+
+
+@config_bp.route('/api/configurations/import', methods=['POST'])
+@login_required
+def configurations_import():
+    """Process CSV import of product configurations."""
+    agency_id = request.form.get('agency_id', type=int)
+    file = request.files.get('csv_file')
+
+    if not file or not file.filename.endswith('.csv'):
+        return jsonify({'error': 'Please upload a valid CSV file'}), 400
+
+    try:
+        content = file.stream.read().decode('utf-8')
+        reader = csv.DictReader(StringIO(content))
+
+        results = {'created': 0, 'updated': 0, 'skipped': 0, 'errors': []}
+
+        for row_num, row in enumerate(reader, start=2):
+            try:
+                result = _process_import_row(row, agency_id)
+                if result == 'created':
+                    results['created'] += 1
+                elif result == 'updated':
+                    results['updated'] += 1
+                elif result == 'skipped':
+                    results['skipped'] += 1
+            except Exception as e:
+                results['errors'].append(f"Row {row_num}: {str(e)}")
+
+        db.session.commit()
+        return jsonify(results)
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': f'Import failed: {str(e)}'}), 500
+
+
+def _process_import_row(row: dict, default_agency_id: int = None) -> str:
+    """Process a single CSV row. Returns 'created', 'updated', or 'skipped'."""
+
+    # --- Resolve Agency ---
+    agency_name = (row.get('agency_name') or '').strip()
+    if agency_name:
+        agency = Agency.query.filter(Agency.name.ilike(agency_name)).first()
+        if not agency:
+            raise ValueError(f"Agency '{agency_name}' not found")
+    elif default_agency_id:
+        agency = Agency.query.get(default_agency_id)
+        if not agency:
+            raise ValueError(f"Default agency ID {default_agency_id} not found")
+    else:
+        raise ValueError("No agency specified")
+
+    # --- Resolve FunctionalArea and Function ---
+    fa_name = (row.get('functional_area') or '').strip()
+    func_name = (row.get('function') or '').strip()
+    if not fa_name or not func_name:
+        raise ValueError("functional_area and function are required")
+
+    fa = FunctionalArea.query.filter(FunctionalArea.name.ilike(fa_name)).first()
+    if not fa:
+        raise ValueError(f"Functional area '{fa_name}' not found")
+
+    function = Function.query.filter(
+        Function.name.ilike(func_name),
+        Function.functional_area_id == fa.id
+    ).first()
+    if not function:
+        raise ValueError(f"Function '{func_name}' not found in '{fa_name}'")
+
+    # --- Resolve or create Component ---
+    comp_name = (row.get('component') or '').strip()
+    if not comp_name:
+        raise ValueError("component is required")
+
+    component = Component.query.filter(Component.name.ilike(comp_name)).first()
+    if not component:
+        component = Component(name=comp_name)
+        db.session.add(component)
+        db.session.flush()
+
+    # --- Find or create Configuration ---
+    config = Configuration.query.filter_by(
+        agency_id=agency.id,
+        function_id=function.id,
+        component_id=component.id
+    ).first()
+
+    action = 'updated' if config else 'created'
+
+    if not config:
+        config = Configuration(
+            agency_id=agency.id,
+            function_id=function.id,
+            component_id=component.id
+        )
+        db.session.add(config)
+        db.session.flush()
+        db.session.add(ConfigurationHistory(
+            configuration_id=config.id,
+            action='created',
+            changed_by=get_updated_by(),
+            new_values={'source': 'csv_import'}
+        ))
+
+    # --- Update configuration fields ---
+    status_val = (row.get('status') or '').strip()
+    if status_val:
+        config.status = status_val
+
+    deployment_str = (row.get('deployment_date') or '').strip()
+    if deployment_str:
+        try:
+            config.deployment_date = datetime.strptime(deployment_str, '%Y-%m-%d').date()
+        except ValueError:
+            pass  # ignore invalid dates
+
+    notes_val = (row.get('notes') or '').strip()
+    if notes_val:
+        config.implementation_notes = notes_val
+
+    version_label_val = (row.get('version_label') or '').strip()
+    if version_label_val:
+        config.version_label = version_label_val
+
+    # --- Handle Product attachment ---
+    product_name = (row.get('product') or '').strip()
+    vendor_name = (row.get('vendor') or '').strip()
+
+    if product_name:
+        # Resolve or create Vendor
+        vendor = None
+        if vendor_name:
+            vendor = Vendor.query.filter(Vendor.name.ilike(vendor_name)).first()
+            if not vendor:
+                vendor = Vendor(name=vendor_name)
+                db.session.add(vendor)
+                db.session.flush()
+
+        # Resolve or create Product (match by name + vendor if vendor specified)
+        product_q = Product.query.filter(Product.name.ilike(product_name))
+        if vendor:
+            product_q = product_q.filter(Product.vendor_id == vendor.id)
+        product = product_q.first()
+
+        if not product:
+            product = Product(name=product_name, vendor_id=vendor.id if vendor else None)
+            db.session.add(product)
+            db.session.flush()
+
+        # Resolve ProductVersion if specified
+        version_str = (row.get('product_version') or '').strip()
+        product_version = None
+        if version_str:
+            product_version = ProductVersion.query.filter_by(
+                product_id=product.id,
+                version=version_str
+            ).first()
+            if not product_version:
+                product_version = ProductVersion(product_id=product.id, version=version_str)
+                db.session.add(product_version)
+                db.session.flush()
+
+        # Link product to configuration (upsert)
+        cp = ConfigurationProduct.query.filter_by(
+            configuration_id=config.id,
+            product_id=product.id
+        ).first()
+
+        if not cp:
+            cp = ConfigurationProduct(
+                configuration_id=config.id,
+                product_id=product.id,
+                status='Active'
+            )
+            db.session.add(cp)
+            db.session.add(ConfigurationHistory(
+                configuration_id=config.id,
+                action='product_added',
+                changed_by=get_updated_by(),
+                new_values={'product_id': product.id, 'source': 'csv_import'}
+            ))
+
+        cp.product_version_id = product_version.id if product_version else None
+
+    return action
+
+
+@config_bp.route('/api/configurations/export-template')
+@login_required
+def configurations_export_template():
+    """Download a sample CSV template for import."""
+    import io
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow([
+        'agency_name', 'functional_area', 'function', 'component',
+        'product', 'vendor', 'product_version', 'status', 'deployment_date', 'version_label', 'notes'
+    ])
+    # Example row
+    writer.writerow([
+        'Metro Transit', 'Operations', 'Real-time Tracking', 'AVL System',
+        'TransitMaster', 'Trapeze', '5.2.1', 'Active', '2023-06-15', 'v5.2.1-prod', 'Primary AVL system'
+    ])
+    output.seek(0)
+    return Response(
+        output.getvalue(),
+        mimetype='text/csv',
+        headers={'Content-Disposition': 'attachment; filename=configurations_import_template.csv'}
+    )
+

@@ -1,0 +1,176 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="max-w-3xl mx-auto px-6 py-8">
+  <div class="flex items-center justify-between mb-6">
+    <h1 class="text-2xl font-bold text-white">Import Product Configurations</h1>
+    <a href="/configurations" class="text-slate-400 hover:text-white text-sm">← Back to Configurations</a>
+  </div>
+
+  <!-- Instructions Card -->
+  <div class="glass-effect rounded-xl p-6 border border-slate-700/50 mb-6">
+    <h2 class="text-lg font-semibold text-white mb-4">CSV Format</h2>
+    <p class="text-slate-400 text-sm mb-3">Upload a CSV with these columns:</p>
+    <code class="block bg-slate-800 p-3 rounded text-xs text-slate-300 overflow-x-auto whitespace-nowrap">
+agency_name,functional_area,function,component,product,vendor,product_version,status,deployment_date,version_label,notes
+    </code>
+    
+    <div class="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4 text-xs text-slate-400">
+      <div>
+        <h3 class="text-slate-300 font-medium mb-2">Required Fields</h3>
+        <ul class="space-y-1">
+          <li>• <strong class="text-slate-200">functional_area</strong>: Must exist</li>
+          <li>• <strong class="text-slate-200">function</strong>: Must exist within area</li>
+          <li>• <strong class="text-slate-200">component</strong>: Created if not found</li>
+        </ul>
+      </div>
+      <div>
+        <h3 class="text-slate-300 font-medium mb-2">Optional Fields</h3>
+        <ul class="space-y-1">
+          <li>• <strong class="text-slate-200">agency_name</strong>: Or select below</li>
+          <li>• <strong class="text-slate-200">product, vendor</strong>: Created if not found</li>
+          <li>• <strong class="text-slate-200">status</strong>: Active, Planned, Retired, Draft</li>
+          <li>• <strong class="text-slate-200">deployment_date</strong>: YYYY-MM-DD format</li>
+          <li>• <strong class="text-slate-200">version_label</strong>: Free text version</li>
+          <li>• <strong class="text-slate-200">product_version</strong>: Specific product version</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="mt-4">
+      <a href="/api/configurations/export-template" 
+         class="inline-flex items-center gap-2 px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-200 text-sm rounded transition-colors">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+        </svg>
+        Download Template CSV
+      </a>
+    </div>
+  </div>
+
+  <!-- Upload Form -->
+  <div class="glass-effect rounded-xl p-6 border border-slate-700/50">
+    <form id="import-form" enctype="multipart/form-data" class="space-y-4">
+      
+      <div>
+        <label class="block text-sm text-slate-300 mb-2">Scope to Agency (optional)</label>
+        <select name="agency_id" class="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
+          <option value="">— Use agency_name column from CSV —</option>
+          {% for a in agencies %}
+          <option value="{{ a.id }}">{{ a.name }}</option>
+          {% endfor %}
+        </select>
+        <p class="text-xs text-slate-500 mt-1">If selected, all rows will use this agency (agency_name column ignored)</p>
+      </div>
+
+      <div>
+        <label class="block text-sm text-slate-300 mb-2">CSV File</label>
+        <input type="file" name="csv_file" accept=".csv" required
+               class="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-white 
+                      file:mr-4 file:py-1.5 file:px-4 file:rounded file:border-0 
+                      file:bg-blue-600 file:text-white file:text-sm file:font-medium
+                      file:cursor-pointer hover:file:bg-blue-500">
+      </div>
+
+      <div class="flex items-center gap-3 pt-2">
+        <button type="submit" id="import-btn"
+                class="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded text-white font-medium transition-colors flex items-center gap-2">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+          </svg>
+          Import Configurations
+        </button>
+        <span id="import-status" class="text-sm text-slate-400"></span>
+      </div>
+    </form>
+  </div>
+
+  <!-- Results Area -->
+  <div id="import-results" class="mt-6"></div>
+</div>
+
+<script>
+document.getElementById('import-form').addEventListener('submit', async function(e) {
+  e.preventDefault();
+  
+  const form = e.target;
+  const btn = document.getElementById('import-btn');
+  const status = document.getElementById('import-status');
+  const results = document.getElementById('import-results');
+  
+  btn.disabled = true;
+  btn.innerHTML = '<svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/></svg> Importing...';
+  status.textContent = '';
+  results.innerHTML = '';
+  
+  const formData = new FormData(form);
+  
+  try {
+    const response = await fetch('/api/configurations/import', {
+      method: 'POST',
+      body: formData,
+      headers: {
+        'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').content
+      }
+    });
+    
+    const data = await response.json();
+    
+    if (!response.ok) {
+      results.innerHTML = `
+        <div class="bg-red-900/30 border border-red-700/50 rounded-lg p-4">
+          <h3 class="text-red-400 font-medium mb-2">Import Failed</h3>
+          <p class="text-red-300 text-sm">${data.error || 'Unknown error occurred'}</p>
+        </div>`;
+      return;
+    }
+    
+    // Build results display
+    let html = '<div class="glass-effect rounded-xl p-6 border border-slate-700/50">';
+    html += '<h3 class="text-lg font-semibold text-white mb-4">Import Results</h3>';
+    
+    html += '<div class="grid grid-cols-3 gap-4 mb-4">';
+    html += `<div class="bg-emerald-900/30 border border-emerald-700/50 rounded-lg p-4 text-center">
+               <div class="text-2xl font-bold text-emerald-400">${data.created}</div>
+               <div class="text-sm text-slate-400">Created</div>
+             </div>`;
+    html += `<div class="bg-blue-900/30 border border-blue-700/50 rounded-lg p-4 text-center">
+               <div class="text-2xl font-bold text-blue-400">${data.updated}</div>
+               <div class="text-sm text-slate-400">Updated</div>
+             </div>`;
+    html += `<div class="bg-amber-900/30 border border-amber-700/50 rounded-lg p-4 text-center">
+               <div class="text-2xl font-bold text-amber-400">${data.errors ? data.errors.length : 0}</div>
+               <div class="text-sm text-slate-400">Errors</div>
+             </div>`;
+    html += '</div>';
+    
+    if (data.errors && data.errors.length > 0) {
+      html += '<div class="mt-4">';
+      html += '<h4 class="text-sm font-medium text-red-400 mb-2">Errors:</h4>';
+      html += '<ul class="bg-slate-800/50 rounded p-3 text-xs text-red-300 space-y-1 max-h-48 overflow-y-auto">';
+      data.errors.forEach(err => {
+        html += `<li>• ${err}</li>`;
+      });
+      html += '</ul></div>';
+    }
+    
+    html += '<div class="mt-4 flex gap-3">';
+    html += '<a href="/configurations" class="px-3 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded text-sm">View Configurations</a>';
+    html += '<button onclick="document.getElementById(\'import-form\').reset(); document.getElementById(\'import-results\').innerHTML=\'\';" class="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-sm">Import More</button>';
+    html += '</div>';
+    
+    html += '</div>';
+    results.innerHTML = html;
+    
+  } catch (err) {
+    results.innerHTML = `
+      <div class="bg-red-900/30 border border-red-700/50 rounded-lg p-4">
+        <h3 class="text-red-400 font-medium mb-2">Import Failed</h3>
+        <p class="text-red-300 text-sm">${err.message}</p>
+      </div>`;
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg> Import Configurations';
+  }
+});
+</script>
+{% endblock %}
