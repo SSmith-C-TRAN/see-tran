@@ -646,7 +646,11 @@ def _process_import_row(row: dict, default_agency_id: int = None) -> str:
         # Resolve or create Product (match by name + vendor if vendor specified)
         product_q = Product.query.filter(Product.name.ilike(product_name))
         if vendor:
+            # Exact match: same name AND same vendor
             product_q = product_q.filter(Product.vendor_id == vendor.id)
+        else:
+            # No vendor specified: prefer products without a vendor, else take any match
+            product_q = product_q.order_by(Product.vendor_id.asc().nullsfirst())
         product = product_q.first()
 
         if not product:

@@ -43,6 +43,8 @@ def _get_next_url():
 
 @auth_bp.route('/login')
 def login_page():
+    """Login page."""
+    from flask import render_template
     return render_template('login.html')
 
 
@@ -194,16 +196,34 @@ def _establish_session(*, email: str, name: str, provider: str, sub: str):
 
 
 def login_required(f):
+    """Decorator to require login for a route."""
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        if not session.get('user'):
-            login_url = url_for('auth.login_page', next=request.path)
-            # If HTMX request, send HX-Redirect header with 401 (so client does a GET to login)
-            if request.headers.get('HX-Request') == 'true':
-                resp = make_response('', 401)
-                resp.headers['HX-Redirect'] = login_url
-                return resp
-            return redirect(login_url)
+        if 'user' not in session:
+            # For API routes, return JSON error
+            if request.path.startswith('/api/') or request.path.startswith('/admin/api/'):
+                return jsonify({'error': 'Authentication required'}), 401
+            # For page routes, redirect to login
+            return redirect(url_for('auth.login_page', next=request.url))
+        return f(*args, **kwargs)
+    return decorated_function
+
+
+def admin_required(f):
+    """Decorator to require admin privileges."""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'user' not in session:
+            if request.path.startswith('/api/'):
+                return jsonify({'error': 'Authentication required'}), 401
+            return redirect(url_for('auth.login_page', next=request.url))
+        
+        user = session.get('user', {})
+        if not user.get('is_super_admin'):
+            if request.path.startswith('/api/'):
+                return jsonify({'error': 'Admin privileges required'}), 403
+            return redirect(url_for('main.index'))
+        
         return f(*args, **kwargs)
     return decorated_function
 
@@ -228,10 +248,7 @@ def super_admin_required(f):
     return wrapper
 
 
-def get_current_user():
-    return session.get('user')
-
-
-def get_updated_by():
-    user = get_current_user()
-    return (user.get('name') if user else 'Anonymous')
+def get_updated_by() -> str:
+    """Get the current user's identifier for audit logging."""
+    user = session.get('user', {})
+    return user.get('email', 'anonymous')

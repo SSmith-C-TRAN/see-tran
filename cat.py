@@ -14,9 +14,10 @@ files_to_concatenate = [
     #'app/routes/vendor.py',      # Vendor routes
     'app/routes/agency.py',      # Agency routes
     #'app/routes/standard.py',    # Standards routes
-    #'app/routes/integration.py', # Integration routes
+    'app/routes/integrations.py', # Integration routes
     #'app/routes/component.py',   # Component routes
     #'app/routes/function.py',    # Function routes
+    'app/routes/configurations.py', # Configuration routes
     
     # Models and Data
     #'app/models/__init__.py',    # Models initialization
@@ -29,8 +30,8 @@ files_to_concatenate = [
     #'app/auth.py',               # Authentication logic
     
     # Agents
-    #'app/agents/__init__.py',    # Agents initialization
-    #'app/agents/agency_agent.py',# Agency business logic
+    'app/agents/__init__.py',    # Agents initialization
+    'app/agents/agency_agent.py',# Agency business logic
     #'app/agents/component_agent.py', # Component business logic
     
     # Utils
@@ -57,6 +58,8 @@ files_to_concatenate = [
     'app/templates/functional_areas.html', # Functional areas page
     'app/templates/agencies.html',   # Agencies page
     #'app/templates/contribute.html', # Contribute page
+    'app/templates/configurations.html', # Configurations page
+    'app/templates/component_detail.html', # Component detail page
     
     # Template Fragments
     #'app/templates/fragments/vendor_details.html',

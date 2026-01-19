@@ -1,15 +1,98 @@
-{% extends 'base.html' %}
+<!-- app/templates/admin/dashboard.html -->
+{% extends "base.html" %}
+
 {% block content %}
-<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-  <div class="glass-effect rounded-xl p-6 border border-slate-700/50">
-    <h1 class="text-2xl font-bold text-white mb-4">Admin Dashboard</h1>
-    <p class="text-slate-300">You have super admin access. Expose any management tools here.</p>
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
-      <a href="/agencies" class="p-4 bg-slate-800/50 rounded border border-slate-700/50 hover:bg-slate-800/70">Manage Agencies</a>
-      <a href="/components" class="p-4 bg-slate-800/50 rounded border border-slate-700/50 hover:bg-slate-800/70">Manage Components</a>
-      <a href="/vendors" class="p-4 bg-slate-800/50 rounded border border-slate-700/50 hover:bg-slate-800/70">Manage Vendors</a>
-      <a href="/integrations" class="p-4 bg-slate-800/50 rounded border border-slate-700/50 hover:bg-slate-800/70">Manage Integrations</a>
+<div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+  
+  <!-- Page Header -->
+  <div class="mb-8">
+    <h1 class="text-3xl font-bold text-white mb-2">Admin Dashboard</h1>
+    <p class="text-slate-400">System administration and AI-powered data management.</p>
+  </div>
+
+  <!-- Agent Tools -->
+  <div class="mb-8">
+    <h2 class="text-xl font-semibold text-white mb-4">AI Agents</h2>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+      
+      <!-- Agency Agent -->
+      <a href="{{ url_for('admin.agency_agent_page') }}" 
+         class="glass-effect rounded-xl p-6 border border-slate-700/50 hover:border-blue-500/50 transition-colors group">
+        <div class="flex items-center space-x-4 mb-4">
+          <div class="w-12 h-12 bg-gradient-to-r from-blue-500 to-cyan-500 rounded-lg flex items-center justify-center">
+            <svg class="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 20 20">
+              <path d="M3 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zM3 10a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H4a1 1 0 01-1-1v-6zM14 9a1 1 0 00-1 1v6a1 1 0 001 1h2a1 1 0 001-1v-6a1 1 0 00-1-1h-2z"/>
+            </svg>
+          </div>
+          <div>
+            <h3 class="text-lg font-semibold text-white group-hover:text-blue-400 transition-colors">Agency Agent</h3>
+            <p class="text-sm text-slate-400">Research & populate agency data</p>
+          </div>
+        </div>
+        <p class="text-slate-500 text-sm">Use AI to research transit agencies and automatically populate organizational details, contacts, and web assets.</p>
+      </a>
+
+      <!-- Vendor Agent (Coming Soon) -->
+      <div class="glass-effect rounded-xl p-6 border border-slate-700/50 opacity-60">
+        <div class="flex items-center space-x-4 mb-4">
+          <div class="w-12 h-12 bg-gradient-to-r from-purple-500 to-pink-500 rounded-lg flex items-center justify-center">
+            <svg class="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 20 20">
+              <path d="M13 6a3 3 0 11-6 0 3 3 0 016 0zM18 8a2 2 0 11-4 0 2 2 0 014 0zM14 15a4 4 0 00-8 0v3h8v-3z"/>
+            </svg>
+          </div>
+          <div>
+            <h3 class="text-lg font-semibold text-white">Vendor Agent</h3>
+            <p class="text-sm text-slate-400">Coming soon</p>
+          </div>
+        </div>
+        <p class="text-slate-500 text-sm">Research technology vendors, their products, and contact information.</p>
+      </div>
+
+      <!-- Component Agent (Coming Soon) -->
+      <div class="glass-effect rounded-xl p-6 border border-slate-700/50 opacity-60">
+        <div class="flex items-center space-x-4 mb-4">
+          <div class="w-12 h-12 bg-gradient-to-r from-green-500 to-emerald-500 rounded-lg flex items-center justify-center">
+            <svg class="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 20 20">
+              <path fill-rule="evenodd" d="M12.395 2.553a1 1 0 00-1.45-.385c-.345.23-.614.558-.822.88-.214.33-.403.713-.57 1.116-.334.804-.614 1.768-.84 2.734a31.365 31.365 0 00-.613 3.58 2.64 2.64 0 01-.945-1.067c-.328-.68-.398-1.534-.398-2.654A1 1 0 005.05 6.05 6.981 6.981 0 003 11a7 7 0 1011.95-4.95c-.592-.591-.98-.985-1.348-1.467-.363-.476-.724-1.063-1.207-2.03z" clip-rule="evenodd"/>
+            </svg>
+          </div>
+          <div>
+            <h3 class="text-lg font-semibold text-white">Component Agent</h3>
+            <p class="text-sm text-slate-400">Coming soon</p>
+          </div>
+        </div>
+        <p class="text-slate-500 text-sm">Research transit technology components and their capabilities.</p>
+      </div>
     </div>
+  </div>
+
+  <!-- Quick Stats -->
+  <div class="mb-8">
+    <h2 class="text-xl font-semibold text-white mb-4">System Overview</h2>
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div class="glass-effect rounded-lg p-4 border border-slate-700/50">
+        <div class="text-2xl font-bold text-white" hx-get="/api/count/agencies" hx-trigger="load">--</div>
+        <div class="text-sm text-slate-400">Agencies</div>
+      </div>
+      <div class="glass-effect rounded-lg p-4 border border-slate-700/50">
+        <div class="text-2xl font-bold text-white" hx-get="/api/count/vendors" hx-trigger="load">--</div>
+        <div class="text-sm text-slate-400">Vendors</div>
+      </div>
+      <div class="glass-effect rounded-lg p-4 border border-slate-700/50">
+        <div class="text-2xl font-bold text-white" hx-get="/api/count/components" hx-trigger="load">--</div>
+        <div class="text-sm text-slate-400">Components</div>
+      </div>
+      <div class="glass-effect rounded-lg p-4 border border-slate-700/50">
+        <div class="text-2xl font-bold text-white" hx-get="/api/count/configurations" hx-trigger="load">--</div>
+        <div class="text-sm text-slate-400">Configurations</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Recent Agent Activity -->
+  <div class="glass-effect rounded-xl p-6 border border-slate-700/50">
+    <h2 class="text-xl font-semibold text-white mb-4">Recent Agent Activity</h2>
+    <p class="text-slate-500 text-sm">Agent execution logs will appear here. Check <code class="bg-slate-800 px-1 rounded">logs/agent_audit.jsonl</code> for detailed logs.</p>
   </div>
 </div>
 {% endblock %}

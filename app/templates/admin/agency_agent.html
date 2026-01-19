@@ -1,0 +1,446 @@
+<!-- app/templates/admin/agency_agent.html -->
+{% extends "base.html" %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+  
+  <!-- Page Header -->
+  <div class="mb-8">
+    <nav class="text-sm text-slate-400 mb-2">
+      <a href="/admin" class="hover:text-white">Admin</a>
+      <span class="mx-2">›</span>
+      <span>Agency Agent</span>
+    </nav>
+    <h1 class="text-3xl font-bold text-white mb-2">Agency Agent</h1>
+    <p class="text-slate-400">Use AI to research and populate transit agency data. Review proposed changes before committing.</p>
+  </div>
+
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+    
+    <!-- Input Panel -->
+    <div class="space-y-6">
+      
+      <!-- New Agency Form -->
+      <div class="glass-effect rounded-xl p-6 border border-slate-700/50">
+        <h2 class="text-xl font-semibold text-white mb-4">Research New Agency</h2>
+        <form id="new-agency-form" class="space-y-4">
+          <div>
+            <label class="block text-sm text-slate-400 mb-2">Agency Name</label>
+            <input type="text" 
+                   id="new-agency-name" 
+                   placeholder="e.g., TriMet, WMATA, LA Metro"
+                   class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-3 text-white placeholder-slate-500 focus:border-blue-500 focus:outline-none">
+          </div>
+          <button type="submit" 
+                  id="run-new-btn"
+                  class="w-full px-4 py-3 bg-gradient-to-r from-blue-600 to-cyan-600 rounded-lg font-medium hover:from-blue-700 hover:to-cyan-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed">
+            <span class="btn-text">Research Agency</span>
+            <span class="btn-loading hidden">
+              <svg class="animate-spin inline w-5 h-5 mr-2" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+              Researching...
+            </span>
+          </button>
+        </form>
+      </div>
+
+      <!-- Update Existing Agency -->
+      <div class="glass-effect rounded-xl p-6 border border-slate-700/50">
+        <h2 class="text-xl font-semibold text-white mb-4">Update Existing Agency</h2>
+        <form id="update-agency-form" class="space-y-4">
+          <div>
+            <label class="block text-sm text-slate-400 mb-2">Select Agency</label>
+            <select id="existing-agency-select" 
+                    class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-3 text-white focus:border-blue-500 focus:outline-none">
+              <option value="">Choose an agency...</option>
+              {% for agency in agencies %}
+              <option value="{{ agency.id }}">{{ agency.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <button type="submit" 
+                  id="run-update-btn"
+                  disabled
+                  class="w-full px-4 py-3 bg-gradient-to-r from-purple-600 to-pink-600 rounded-lg font-medium hover:from-purple-700 hover:to-pink-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed">
+            <span class="btn-text">Update Agency Data</span>
+            <span class="btn-loading hidden">
+              <svg class="animate-spin inline w-5 h-5 mr-2" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+              Researching...
+            </span>
+          </button>
+        </form>
+      </div>
+
+      <!-- Execution Log -->
+      <div class="glass-effect rounded-xl p-6 border border-slate-700/50">
+        <h2 class="text-xl font-semibold text-white mb-4">Execution Log</h2>
+        <div id="execution-log" class="space-y-2 max-h-64 overflow-y-auto text-sm font-mono">
+          <p class="text-slate-500">Logs will appear here...</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Results Panel -->
+    <div class="space-y-6">
+      
+      <!-- Status -->
+      <div id="status-panel" class="hidden glass-effect rounded-xl p-6 border border-slate-700/50">
+        <div class="flex items-center space-x-3">
+          <div id="status-icon" class="w-10 h-10 rounded-full flex items-center justify-center">
+            <!-- Success/Error icon injected by JS -->
+          </div>
+          <div>
+            <h3 id="status-title" class="text-lg font-semibold text-white"></h3>
+            <p id="status-message" class="text-sm text-slate-400"></p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Draft Preview -->
+      <div id="draft-panel" class="hidden glass-effect rounded-xl p-6 border border-slate-700/50">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-xl font-semibold text-white">Proposed Data</h2>
+          <span id="update-badge" class="hidden px-2 py-1 bg-purple-600/20 border border-purple-600/30 rounded text-xs text-purple-300">Update</span>
+        </div>
+        <div id="draft-content" class="space-y-3">
+          <!-- Draft fields rendered by JS -->
+        </div>
+      </div>
+
+      <!-- Diff View (for updates) -->
+      <div id="diff-panel" class="hidden glass-effect rounded-xl p-6 border border-slate-700/50">
+        <h2 class="text-xl font-semibold text-white mb-4">Changes</h2>
+        <div id="diff-content" class="space-y-2">
+          <!-- Diff rendered by JS -->
+        </div>
+      </div>
+
+      <!-- Skipped Fields -->
+      <div id="skipped-panel" class="hidden glass-effect rounded-xl p-6 border border-slate-700/50">
+        <h2 class="text-xl font-semibold text-white mb-4">Skipped (Low Confidence)</h2>
+        <div id="skipped-content" class="space-y-2 text-sm">
+          <!-- Skipped fields rendered by JS -->
+        </div>
+      </div>
+
+      <!-- Action Buttons -->
+      <div id="action-panel" class="hidden flex space-x-4">
+        <button id="apply-btn" 
+                class="flex-1 px-4 py-3 bg-gradient-to-r from-green-600 to-emerald-600 rounded-lg font-medium hover:from-green-700 hover:to-emerald-700 transition-all">
+          Apply Changes
+        </button>
+        <button id="cancel-btn" 
+                class="flex-1 px-4 py-3 bg-slate-700 hover:bg-slate-600 rounded-lg font-medium transition-all">
+          Cancel
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// State
+let currentResult = null;
+let currentAgencyId = null;
+
+// DOM Elements
+const newAgencyForm = document.getElementById('new-agency-form');
+const updateAgencyForm = document.getElementById('update-agency-form');
+const newAgencyName = document.getElementById('new-agency-name');
+const existingAgencySelect = document.getElementById('existing-agency-select');
+const runNewBtn = document.getElementById('run-new-btn');
+const runUpdateBtn = document.getElementById('run-update-btn');
+const applyBtn = document.getElementById('apply-btn');
+const cancelBtn = document.getElementById('cancel-btn');
+const executionLog = document.getElementById('execution-log');
+
+// Enable/disable update button based on selection
+existingAgencySelect.addEventListener('change', () => {
+  runUpdateBtn.disabled = !existingAgencySelect.value;
+});
+
+// Form submissions
+newAgencyForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const name = newAgencyName.value.trim();
+  if (!name) return;
+  
+  currentAgencyId = null;
+  await runAgent({ name });
+});
+
+updateAgencyForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const agencyId = existingAgencySelect.value;
+  if (!agencyId) return;
+  
+  currentAgencyId = parseInt(agencyId);
+  await runAgent({ agency_id: currentAgencyId });
+});
+
+// Run the agent
+async function runAgent(payload) {
+  setLoading(true);
+  clearResults();
+  logMessage('Starting agent execution...');
+  
+  try {
+    const response = await fetch('/admin/api/agents/agency/run', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': document.querySelector('meta[name="csrf-token"]')?.content || '',
+      },
+      body: JSON.stringify(payload),
+    });
+    
+    const result = await response.json();
+    currentResult = result;
+    
+    // Log execution details
+    if (result.logs) {
+      result.logs.forEach(log => {
+        const msg = `[${log.event_type}] ${JSON.stringify(log.details).slice(0, 100)}`;
+        logMessage(msg, log.event_type === 'error' ? 'error' : 'info');
+      });
+    }
+    
+    if (result.success) {
+      showSuccess(result);
+    } else {
+      showError(result.error || 'Agent execution failed');
+    }
+    
+  } catch (err) {
+    showError(err.message);
+    logMessage(`Error: ${err.message}`, 'error');
+  } finally {
+    setLoading(false);
+  }
+}
+
+// Apply changes
+applyBtn.addEventListener('click', async () => {
+  if (!currentResult || !currentResult.draft) return;
+  
+  applyBtn.disabled = true;
+  applyBtn.textContent = 'Applying...';
+  
+  try {
+    const response = await fetch('/admin/api/agents/agency/commit', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': document.querySelector('meta[name="csrf-token"]')?.content || '',
+      },
+      body: JSON.stringify({
+        draft: currentResult.draft,
+        agency_id: currentAgencyId,
+      }),
+    });
+    
+    const result = await response.json();
+    
+    if (result.success) {
+      showToast(result.message, true);
+      clearResults();
+      // Refresh the agency list
+      location.reload();
+    } else {
+      showToast(result.error || 'Failed to apply changes', false);
+    }
+    
+  } catch (err) {
+    showToast(err.message, false);
+  } finally {
+    applyBtn.disabled = false;
+    applyBtn.textContent = 'Apply Changes';
+  }
+});
+
+// Cancel
+cancelBtn.addEventListener('click', () => {
+  clearResults();
+  currentResult = null;
+  currentAgencyId = null;
+});
+
+// UI Helpers
+function setLoading(loading) {
+  const btns = [runNewBtn, runUpdateBtn];
+  btns.forEach(btn => {
+    btn.disabled = loading;
+    btn.querySelector('.btn-text').classList.toggle('hidden', loading);
+    btn.querySelector('.btn-loading').classList.toggle('hidden', !loading);
+  });
+}
+
+function clearResults() {
+  document.getElementById('status-panel').classList.add('hidden');
+  document.getElementById('draft-panel').classList.add('hidden');
+  document.getElementById('diff-panel').classList.add('hidden');
+  document.getElementById('skipped-panel').classList.add('hidden');
+  document.getElementById('action-panel').classList.add('hidden');
+}
+
+function showSuccess(result) {
+  const statusPanel = document.getElementById('status-panel');
+  const statusIcon = document.getElementById('status-icon');
+  const statusTitle = document.getElementById('status-title');
+  const statusMessage = document.getElementById('status-message');
+  
+  statusPanel.classList.remove('hidden');
+  statusIcon.className = 'w-10 h-10 rounded-full flex items-center justify-center bg-green-600';
+  statusIcon.innerHTML = '<svg class="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>';
+  statusTitle.textContent = result.is_update ? 'Update Ready' : 'New Agency Data Ready';
+  statusMessage.textContent = `Using ${result.provider_used} (${result.model_used})`;
+  
+  // Show draft
+  renderDraft(result.draft, result.is_update);
+  
+  // Show diff if update
+  if (result.is_update && result.diff && Object.keys(result.diff).length > 0) {
+    renderDiff(result.diff);
+  }
+  
+  // Show skipped fields
+  if (result.skipped_fields && Object.keys(result.skipped_fields).length > 0) {
+    renderSkipped(result.skipped_fields);
+  }
+  
+  // Show action buttons
+  document.getElementById('action-panel').classList.remove('hidden');
+}
+
+function showError(message) {
+  const statusPanel = document.getElementById('status-panel');
+  const statusIcon = document.getElementById('status-icon');
+  const statusTitle = document.getElementById('status-title');
+  const statusMessage = document.getElementById('status-message');
+  
+  statusPanel.classList.remove('hidden');
+  statusIcon.className = 'w-10 h-10 rounded-full flex items-center justify-center bg-red-600';
+  statusIcon.innerHTML = '<svg class="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>';
+  statusTitle.textContent = 'Error';
+  statusMessage.textContent = message;
+}
+
+function renderDraft(draft, isUpdate) {
+  const panel = document.getElementById('draft-panel');
+  const content = document.getElementById('draft-content');
+  const badge = document.getElementById('update-badge');
+  
+  panel.classList.remove('hidden');
+  badge.classList.toggle('hidden', !isUpdate);
+  
+  const fields = ['name', 'short_name', 'location', 'description', 'website', 'ceo', 
+                  'address_hq', 'phone_number', 'contact_email', 'transit_map_link', 'email_domain'];
+  
+  let html = '';
+  fields.forEach(field => {
+    if (draft[field]) {
+      const label = field.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+      html += `
+        <div class="flex justify-between items-start p-3 bg-slate-800/50 rounded-lg">
+          <span class="text-slate-400 text-sm">${label}</span>
+          <span class="text-white text-sm text-right max-w-xs truncate" title="${draft[field]}">${draft[field]}</span>
+        </div>`;
+    }
+  });
+  
+  // Show image fetch status
+  if (draft._logo_fetched) {
+    html += `<div class="flex items-center space-x-2 p-3 bg-green-900/20 rounded-lg text-green-300 text-sm">
+      <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>
+      <span>Logo fetched</span>
+    </div>`;
+  }
+  if (draft._header_fetched) {
+    html += `<div class="flex items-center space-x-2 p-3 bg-green-900/20 rounded-lg text-green-300 text-sm">
+      <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>
+      <span>Header fetched</span>
+    </div>`;
+  }
+  
+  content.innerHTML = html || '<p class="text-slate-500">No data extracted</p>';
+}
+
+function renderDiff(diff) {
+  const panel = document.getElementById('diff-panel');
+  const content = document.getElementById('diff-content');
+  
+  panel.classList.remove('hidden');
+  
+  let html = '';
+  for (const [field, change] of Object.entries(diff)) {
+    const label = field.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+    html += `
+      <div class="p-3 bg-slate-800/50 rounded-lg">
+        <div class="text-sm text-slate-400 mb-1">${label}</div>
+        <div class="flex items-center space-x-2 text-sm">
+          <span class="text-red-400 line-through">${change.old || '(empty)'}</span>
+          <span class="text-slate-500">→</span>
+          <span class="text-green-400">${change.new}</span>
+        </div>
+      </div>`;
+  }
+  
+  content.innerHTML = html;
+}
+
+function renderSkipped(skipped) {
+  const panel = document.getElementById('skipped-panel');
+  const content = document.getElementById('skipped-content');
+  
+  panel.classList.remove('hidden');
+  
+  let html = '';
+  for (const [field, info] of Object.entries(skipped)) {
+    const label = field.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+    html += `
+      <div class="flex justify-between items-center p-2 bg-yellow-900/20 rounded">
+        <span class="text-yellow-300">${label}</span>
+        <span class="text-yellow-500 text-xs">${info.reason}</span>
+      </div>`;
+  }
+  
+  content.innerHTML = html;
+}
+
+function logMessage(message, type = 'info') {
+  const colors = {
+    info: 'text-slate-300',
+    error: 'text-red-400',
+    success: 'text-green-400',
+  };
+  
+  const time = new Date().toLocaleTimeString();
+  const entry = document.createElement('div');
+  entry.className = colors[type] || colors.info;
+  entry.textContent = `[${time}] ${message}`;
+  
+  if (executionLog.querySelector('.text-slate-500')) {
+    executionLog.innerHTML = '';
+  }
+  
+  executionLog.appendChild(entry);
+  executionLog.scrollTop = executionLog.scrollHeight;
+}
+
+// Toast helper (if not defined globally)
+function showToast(message, success) {
+  if (window.showToast) {
+    window.showToast(message, success);
+    return;
+  }
+  alert(message);
+}
+</script>
+{% endblock %}

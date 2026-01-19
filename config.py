@@ -44,9 +44,34 @@ class Config:
 
     SUPER_ADMIN_EMAIL = os.getenv('SUPER_ADMIN_EMAIL')
 
+    # LLM API Keys
     CLAUDE_API_KEY = os.environ.get('CLAUDE_API_KEY')
     CLAUDE_API_URL = 'https://api.anthropic.com/v1/messages'
     CLAUDE_MODEL = os.environ.get('CLAUDE_MODEL', 'claude-3-5-haiku-20241022')
+    
+    OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY')
+    
+    # Agent Configuration
+    AGENT_PROVIDERS = {
+        'agency': {
+            'provider': os.environ.get('AGENCY_AGENT_PROVIDER', 'anthropic'),
+            'model': os.environ.get('AGENCY_AGENT_MODEL', 'claude-sonnet-4-20250514'),
+        },
+        'vendor': {
+            'provider': os.environ.get('VENDOR_AGENT_PROVIDER', 'anthropic'),
+            'model': os.environ.get('VENDOR_AGENT_MODEL', 'claude-sonnet-4-20250514'),
+        },
+        'component': {
+            'provider': os.environ.get('COMPONENT_AGENT_PROVIDER', 'anthropic'),
+            'model': os.environ.get('COMPONENT_AGENT_MODEL', 'claude-sonnet-4-20250514'),
+        },
+        'image_fetch': {
+            'provider': os.environ.get('IMAGE_AGENT_PROVIDER', 'openai'),
+            'model': os.environ.get('IMAGE_AGENT_MODEL', 'gpt-4o'),
+        },
+    }
+    
+    AGENT_CONFIDENCE_THRESHOLD = float(os.environ.get('AGENT_CONFIDENCE_THRESHOLD', '0.7'))
     
     # AWS settings
     AWS_ACCESS_KEY_ID = os.environ.get('AWS_ACCESS_KEY_ID')
