@@ -1,43 +1,20 @@
 # app/agents/agency_agent.py
 """
 Agency Agent - builds or updates transit agency records using LLM with web search.
-
-Uses a two-step approach:
-1. Research with web search (allows citations, natural language)
-2. Extract structured data (clean JSON output)
 """
 
 import json
 import re
-import time
 from typing import Any
 
 from .base import BaseAgent, AgentResult
 
 
-# Schema for structured agency data extraction
-AGENCY_SCHEMA = {
-    'type': 'object',
-    'properties': {
-        'name': {'type': 'string', 'description': 'Official agency name'},
-        'short_name': {'type': 'string', 'description': 'Short name/acronym (e.g., WMATA, BART)'},
-        'location': {'type': 'string', 'description': 'City and state (e.g., Portland, Oregon)'},
-        'description': {'type': 'string', 'description': 'Brief description of the agency (1-2 sentences)'},
-        'website': {'type': 'string', 'description': 'Official website URL'},
-        'ceo': {'type': 'string', 'description': 'Current CEO/General Manager/Executive Director name'},
-        'address_hq': {'type': 'string', 'description': 'Headquarters address'},
-        'phone_number': {'type': 'string', 'description': 'Main phone number'},
-        'contact_email': {'type': 'string', 'description': 'General contact email'},
-        'transit_map_link': {'type': 'string', 'description': 'URL to system map'},
-        'email_domain': {'type': 'string', 'description': 'Agency email domain (e.g., trimet.org)'},
-    },
-    'required': ['name'],
-}
+SYSTEM_PROMPT = """You are a research assistant gathering information about public transit agencies.
 
-
-RESEARCH_SYSTEM_PROMPT = """You are a research assistant gathering information about public transit agencies.
-
-Your task is to search the web for accurate, current information about the specified transit agency.
+Your task is to:
+1. Search the web for accurate, current information about the specified transit agency
+2. Return the findings as a JSON object with no other text or formatting
 
 Research priorities:
 1. Official name and common abbreviations
@@ -46,18 +23,12 @@ Research priorities:
 4. Official website and contact information (phone, email)
 5. Brief description of the transit system
 
-Prioritize official sources (.gov domains, the agency's own website, official press releases) over third-party sources.
+Prioritize official sources (.gov domains, the agency's own website, official press releases).
 
-Summarize your findings clearly, noting the source for key facts like leadership names."""
+CRITICAL: After researching, respond with ONLY a valid JSON object. No markdown, no explanation.
 
+Only include fields where you found clear, reliable information. Omit uncertain fields.
 
-EXTRACTION_SYSTEM_PROMPT = """You are a data extraction assistant. Your task is to extract structured data from research findings.
-
-CRITICAL: Respond with ONLY a valid JSON object. No markdown code blocks, no explanation, no text before or after the JSON.
-
-Only include fields where the research provides clear, reliable information. Omit fields that are uncertain or not found.
-
-JSON Schema:
 {
   "name": "Official agency name",
   "short_name": "Acronym like BART or WMATA", 
@@ -82,11 +53,7 @@ class AgencyAgent(BaseAgent):
     
     def execute(self, input_data: dict, existing_record: Any | None = None) -> AgentResult:
         """
-        Execute agency research and data extraction.
-        
-        Uses a two-step approach:
-        1. Research with web search enabled (natural language response)
-        2. Extract structured JSON from research findings
+        Execute agency research and data extraction in a single LLM call.
         
         Args:
             input_data: {'name': 'Agency Name'} - the agency to research
@@ -107,17 +74,8 @@ class AgencyAgent(BaseAgent):
         self._log('decision', {'action': 'start', 'agency_name': agency_name})
         
         try:
-            # Step 1: Research with web search
-            research_findings = self._research_agency(agency_name)
-            
-            if not research_findings:
-                return self._create_result(
-                    success=False,
-                    error='Research step returned no findings',
-                )
-            
-            # Step 2: Extract structured data
-            draft = self._extract_structured_data(research_findings)
+            # Single call: research + extract
+            draft = self._research_and_extract(agency_name)
             
             if '_parse_error' in draft:
                 self._log('error', {
@@ -153,7 +111,6 @@ class AgencyAgent(BaseAgent):
                 is_update=is_update,
             )
             
-            # Save audit log
             self._save_audit_log(result, input_data)
             
             return result
@@ -165,63 +122,26 @@ class AgencyAgent(BaseAgent):
                 error=str(e),
             )
     
-    def _research_agency(self, agency_name: str) -> str:
+    def _research_and_extract(self, agency_name: str) -> dict:
         """
-        Step 1: Research the agency using web search.
-        
-        Returns natural language findings that may include citations.
+        Single LLM call: search the web and return structured JSON.
         """
         messages = [
             {
                 'role': 'user',
-                'content': f'Research the public transit agency "{agency_name}". Find their official name, current leadership, headquarters address, website, and contact information.',
+                'content': f'Research the public transit agency "{agency_name}" and return the JSON data.',
             }
         ]
         
-        self._log('decision', {'action': 'research_start', 'agency_name': agency_name})
-        
-        response = self._call_llm(messages, RESEARCH_SYSTEM_PROMPT, use_search=True)
-        
-        self._log('decision', {
-            'action': 'research_complete',
-            'response_length': len(response.content),
-        })
-        
-        return response.content
-    
-    def _extract_structured_data(self, research_findings: str) -> dict:
-        """
-        Step 2: Extract structured JSON from research findings.
-        
-        Uses a separate LLM call without web search for cleaner output.
-        """
-        time.sleep(0.5)  # Brief pause to ensure separation between calls
-        messages = [
-            {
-                'role': 'user',
-                'content': f'Extract structured agency data from these research findings:\n\n{research_findings}',
-            }
-        ]
-        
-        self._log('decision', {'action': 'extraction_start'})
-        
-        # Use regular completion (no search) for clean JSON output
-        response = self._call_llm(messages, EXTRACTION_SYSTEM_PROMPT, use_search=False)
+        response = self._call_llm(messages, SYSTEM_PROMPT, use_search=True)
         
         return self._extract_json_from_response(response.content)
     
     def _extract_json_from_response(self, content: str) -> dict:
-        """
-        Extract JSON from LLM response, handling various formats.
-        
-        Handles:
-        - Clean JSON
-        - JSON wrapped in markdown code blocks
-        - JSON embedded in other text
-        """
+        """Extract JSON from LLM response, handling various formats."""
         content = content.strip()
         
-        # Try direct parse first (ideal case)
+        # Try direct parse first
         try:
             return json.loads(content)
         except json.JSONDecodeError:
@@ -229,7 +149,6 @@ class AgencyAgent(BaseAgent):
         
         # Remove markdown code blocks
         if '```' in content:
-            # Match ```json ... ``` or ``` ... ```
             match = re.search(r'```(?:json)?\s*([\s\S]*?)```', content)
             if match:
                 try:
@@ -237,7 +156,7 @@ class AgencyAgent(BaseAgent):
                 except json.JSONDecodeError:
                     pass
         
-        # Find JSON object in the response (between first { and last })
+        # Find JSON object between first { and last }
         start = content.find('{')
         end = content.rfind('}')
         if start != -1 and end != -1 and end > start:
@@ -259,7 +178,6 @@ class AgencyAgent(BaseAgent):
         website = draft.get('website')
         short_name = draft.get('short_name') or draft.get('name', 'agency')
         
-        # Fetch logo
         logo_result = self._call_tool('image_fetch', {
             'entity_type': 'agency',
             'entity_name': draft.get('name', ''),
@@ -272,7 +190,6 @@ class AgencyAgent(BaseAgent):
             draft['_logo_fetched'] = True
             draft['_logo_path'] = logo_result.data.get('filepath')
         
-        # Fetch header
         header_result = self._call_tool('image_fetch', {
             'entity_type': 'agency',
             'entity_name': draft.get('name', ''),
@@ -302,5 +219,5 @@ class AgencyAgent(BaseAgent):
         }
 
 
-# Singleton instance for easy import
+# Singleton instance
 agency_agent = AgencyAgent()

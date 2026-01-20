@@ -156,6 +156,76 @@ def logout():
 
 # Helpers
 
+def _email_domain(email: str) -> str | None:
+    if not email or '@' not in email:
+        return None
+    return email.split('@', 1)[-1].strip().lower() or None
+
+
+def _find_agency_id_for_domain(domain: str) -> int | None:
+    """Return an agency_id for a verified domain, or None if no match.
+
+    Checks VerifiedAgencyDomain first, then falls back to Agency.email_domain.
+    """
+    if not domain:
+        return None
+
+    try:
+        from app.models.tran import Agency, VerifiedAgencyDomain
+
+        mapping = VerifiedAgencyDomain.query.filter_by(domain=domain).first()
+        if mapping:
+            return mapping.agency_id
+
+        agency = Agency.query.filter(Agency.email_domain.isnot(None)).filter_by(email_domain=domain).first()
+        if agency:
+            return agency.id
+
+    except Exception:
+        # If DB isn't ready yet (migrations/dev), fail closed by returning None.
+        return None
+
+    return None
+
+
+def _upsert_user(*, email: str, name: str, provider: str, sub: str):
+    """Create/update a DB User on login and (optionally) auto-associate an agency."""
+    from datetime import datetime
+    from app import db
+
+    try:
+        from app.models.tran import User
+    except Exception:
+        return None
+
+    if not email:
+        return None
+
+    normalized_email = email.strip().lower()
+
+    user = None
+    if provider and sub:
+        user = User.query.filter_by(provider=provider, sub=sub).first()
+    if not user:
+        user = User.query.filter_by(email=normalized_email).first()
+    if not user:
+        user = User(provider=provider, sub=sub)
+
+    user.email = normalized_email
+    user.name = name
+    user.provider = provider
+    user.sub = sub
+    user.last_login_at = datetime.utcnow()
+
+    domain = _email_domain(normalized_email)
+    agency_id = _find_agency_id_for_domain(domain) if domain else None
+    if agency_id and user.agency_id is None:
+        user.agency_id = agency_id
+
+    db.session.add(user)
+    db.session.commit()
+    return user
+
 def _email_allowed(email: str) -> bool:
     if not email or '@' not in email:
         return False
@@ -163,9 +233,17 @@ def _email_allowed(email: str) -> bool:
     super_admin = (email.lower() == (current_app.config.get('SUPER_ADMIN_EMAIL') or '').lower())
     if super_admin:
         return True
-    domain = email.split('@')[-1].lower()
-    # TODO: check against verified_agency_domains table when implemented
-    # For MVP allow everything from public transit-like domains and your sample agencies
+
+    domain = _email_domain(email)
+    if not domain:
+        return False
+
+    # Prefer DB-backed allowlist: verified domains and/or agency domain.
+    # This lets you manage access without redeploying.
+    if _find_agency_id_for_domain(domain):
+        return True
+
+    # Fallback: for MVP allow everything from public transit-like domains and your sample agencies
     allowed_domains = {
         'c-tran.com', 'trimet.org', 'spokanetransit.com', 'kingcounty.gov',
         'godurhamtransit.org', 'townofchapelhill.org', 'islandtransit.org', 'cota.com',
@@ -185,12 +263,14 @@ def _email_allowed(email: str) -> bool:
 def _establish_session(*, email: str, name: str, provider: str, sub: str):
     # Persist minimal identity in session for now
     is_super_admin = (email.lower() == (current_app.config.get('SUPER_ADMIN_EMAIL') or '').lower())
+    user = _upsert_user(email=email, name=name, provider=provider, sub=sub)
     session['user'] = {
         'email': email,
         'name': name,
         'provider': provider,
         'sub': sub,
         'is_super_admin': is_super_admin,
+        'user_id': getattr(user, 'id', None),
     }
     session.permanent = True
 

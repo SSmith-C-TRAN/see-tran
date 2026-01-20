@@ -93,6 +93,7 @@
             functions_print.html
             functional_areas_print.html
             login.html
+            configuration_detail.html
             integrations.html
             functional_areas.html
             component_detail.html
@@ -1489,173 +1490,6 @@ def update_vendor(vendor_id):
 
 # End of app/routes/main.py
 
-# Start of app/routes/agency.py
-from flask import Blueprint, render_template, redirect, url_for, flash, request, jsonify
-from app import db
-from app.models.tran import Agency, Configuration, ConfigurationProduct, Product, Vendor, Function, FunctionalArea
-from app.forms.forms import AgencyForm
-from sqlalchemy import func
-
-agency_bp = Blueprint('agency', __name__, url_prefix='/agencies')
-
-@agency_bp.route('/')
-@agency_bp.route('/<int:page>/', methods=['GET'])
-def index(page=1):
-    per_page = 10
-    agencies = Agency.query.paginate(page=page, per_page=per_page, error_out=False)
-    return render_template('agencies.html', agencies=agencies)
-
-# ---------- API: list (fragment) ----------
-@agency_bp.route('/api/agencies/list')
-def api_agencies_list():
-    search = (request.args.get('search') or '').strip()
-    q = Agency.query
-    if search:
-        q = q.filter(Agency.name.ilike(f"%{search}%"))
-    agencies = q.order_by(Agency.name.asc()).all()
-    return render_template('fragments/agency_list.html', agencies=agencies)
-
-# ---------- API: stats ----------
-@agency_bp.route('/api/agencies/stats')
-def api_agencies_stats():
-    total_agencies = Agency.query.count()
-    active_cfgs = Configuration.query.count()
-    avg_impl = round(active_cfgs / total_agencies, 1) if total_agencies else 0
-    # Vendors per agency via products used in configurations
-    # Count distinct vendor per agency, then average
-    vendor_counts = db.session.query(
-        Configuration.agency_id, func.count(func.distinct(Vendor.id)).label('v_count')
-    ).join(ConfigurationProduct, ConfigurationProduct.configuration_id == Configuration.id)
-    vendor_counts = vendor_counts.join(Product, Product.id == ConfigurationProduct.product_id)
-    vendor_counts = vendor_counts.join(Vendor, Vendor.id == Product.vendor_id)
-    vendor_counts = vendor_counts.group_by(Configuration.agency_id).all()
-    avg_vendors = 0
-    if vendor_counts:
-        avg_vendors = round(sum(vc.v_count for vc in vendor_counts) / len(vendor_counts), 1)
-    return jsonify({
-        'active_implementations': active_cfgs,  # keep legacy key name
-        'avg_implementations_per_agency': avg_impl,
-        'avg_vendors_per_agency': avg_vendors
-    })
-
-# ---------- API: insights ----------
-@agency_bp.route('/api/agencies/insights')
-def api_agencies_insights():
-    # Tech leader: agency with most configurations
-    tech_leader_row = db.session.query(
-        Agency.name, func.count(Configuration.id).label('cfg_count')
-    ).join(Configuration, Configuration.agency_id == Agency.id)
-    tech_leader_row = tech_leader_row.group_by(Agency.id).order_by(func.count(Configuration.id).desc()).first()
-
-    # Common area: functional area most represented in configurations
-    area_row = db.session.query(
-        FunctionalArea.name, func.count(Configuration.id).label('cfg_count')
-    ).join(Function, Function.functional_area_id == FunctionalArea.id)
-    area_row = area_row.join(Configuration, Configuration.function_id == Function.id)
-    area_row = area_row.group_by(FunctionalArea.id).order_by(func.count(Configuration.id).desc()).first()
-
-    # Top vendor: vendor whose products appear in most configurations
-    top_vendor_row = db.session.query(
-        Vendor.name, func.count(func.distinct(Configuration.id)).label('cfg_use')
-    ).join(Product, Product.vendor_id == Vendor.id)
-    top_vendor_row = top_vendor_row.join(ConfigurationProduct, ConfigurationProduct.product_id == Product.id)
-    top_vendor_row = top_vendor_row.join(Configuration, Configuration.id == ConfigurationProduct.configuration_id)
-    top_vendor_row = top_vendor_row.group_by(Vendor.id).order_by(func.count(func.distinct(Configuration.id)).desc()).first()
-
-    return jsonify({
-        'tech_leader': tech_leader_row.name if tech_leader_row else 'N/A',
-        'common_area': area_row.name if area_row else 'N/A',
-        'top_vendor': top_vendor_row.name if top_vendor_row else 'N/A'
-    })
-
-# ---------- API: details (fragment) ----------
-@agency_bp.route('/api/agencies/<int:agency_id>/details')
-def api_agency_details(agency_id):
-    agency = Agency.query.get_or_404(agency_id)
-    # Compute basic configuration usage summary
-    cfg_count = db.session.query(func.count(Configuration.id)).filter(Configuration.agency_id == agency_id).scalar()
-    # Top functional areas for this agency
-    area_rows = db.session.query(
-        FunctionalArea.name, func.count(Configuration.id).label('cfg_count')
-    ).join(Function, Function.functional_area_id == FunctionalArea.id)
-    area_rows = area_rows.join(Configuration, Configuration.function_id == Function.id)
-    area_rows = area_rows.filter(Configuration.agency_id == agency_id)
-    area_rows = area_rows.group_by(FunctionalArea.id).order_by(func.count(Configuration.id).desc()).limit(5).all()
-    areas = [{'name': r.name, 'count': r.cfg_count} for r in area_rows]
-    return render_template('fragments/agency_details.html', agency=agency, cfg_count=cfg_count, top_areas=areas)
-
-# ---------- API: form (fragment) ----------
-@agency_bp.route('/api/agencies/form')
-def api_agency_form():
-    form = AgencyForm()
-    return render_template('fragments/agency_form.html', form=form, agency=None)
-
-@agency_bp.route('/api/agencies/<int:agency_id>/form')
-def api_agency_edit_form(agency_id):
-    agency = Agency.query.get_or_404(agency_id)
-    form = AgencyForm()
-    form.populate_agency(agency)
-    return render_template('fragments/agency_form.html', form=form, agency=agency)
-
-# ---------- API: create/update ----------
-@agency_bp.route('/api/agencies', methods=['POST'])
-def api_create_agency():
-    form = AgencyForm()
-    if form.validate_on_submit():
-        agency = Agency()
-        form.populate_agency(agency)
-        agency.short_name = request.form.get('short_name') or None
-        db.session.add(agency)
-        db.session.commit()
-        return jsonify({'status': 'success', 'id': agency.id})
-    return jsonify({'status': 'error', 'errors': form.errors}), 400
-
-@agency_bp.route('/api/agencies/<int:agency_id>', methods=['POST'])
-def api_update_agency(agency_id):
-    agency = Agency.query.get_or_404(agency_id)
-    form = AgencyForm()
-    if form.validate_on_submit():
-        form.populate_agency(agency)
-        agency.short_name = request.form.get('short_name') or None
-        db.session.commit()
-        return jsonify({'status': 'success'})
-    return jsonify({'status': 'error', 'errors': form.errors}), 400
-
-# End of app/routes/agency.py
-
-# Start of app/routes/integrations.py
-from flask import Blueprint, render_template, request, redirect, url_for
-
-integration_bp = Blueprint('integrations', __name__, url_prefix='/integrations')
-
-@integration_bp.route('/', methods=['GET'])
-def list_integrations():
-    # TODO: Fetch and display agency integrations
-    return render_template('integrations.html', integrations=[])
-
-@integration_bp.route('/new', methods=['GET', 'POST'])
-def new_integration():
-    if request.method == 'POST':
-        # TODO: Process and create a new integration
-        name = request.form.get('name')
-        description = request.form.get('description')
-        # Integration creation logic goes here
-        
-        return redirect(url_for('integrations.list_integrations'))
-    return render_template('integration_form.html')
-
-@integration_bp.route('/standards', methods=['GET', 'POST'])
-def manage_standards():
-    if request.method == 'POST':
-        # TODO: Process new integration standard submission
-        standard_name = request.form.get('standard_name')
-        # Logic to save the new standard goes here
-        
-        return redirect(url_for('integrations.list_integrations'))
-    return render_template('standards.html')
-
-# End of app/routes/integrations.py
-
 # Start of app/routes/configurations.py
 # app/routes/configurations.py
 import csv
@@ -1729,6 +1563,20 @@ def agency_configurations_page(agency_id):
     agencies = Agency.query.order_by(Agency.name.asc()).all()
     functions = Function.query.order_by(Function.name.asc()).all()
     return render_template('configurations.html', agency=agency, agencies=agencies, functions=functions, selected_agency_id=agency.id)
+
+@config_bp.route('/configurations/<int:config_id>')
+@login_required
+def configuration_detail_page(config_id):
+    """Dedicated detail page for a configuration."""
+    c = Configuration.query.options(
+        joinedload(Configuration.agency),
+        joinedload(Configuration.function).joinedload(Function.functional_area),
+        joinedload(Configuration.component),
+        joinedload(Configuration.products).joinedload(ConfigurationProduct.product).joinedload(Product.vendor),
+        joinedload(Configuration.products).joinedload(ConfigurationProduct.product_version)
+    ).get_or_404(config_id)
+    warnings = advisory_validate(c, [cp.product for cp in c.products])
+    return render_template('configuration_detail.html', c=c, warnings=warnings)
 
 # --------- Configuration API ---------
 
@@ -2463,6 +2311,9 @@ class Agency(db.Model):
     )
 
     configurations = db.relationship('Configuration', back_populates='agency', cascade='all, delete-orphan')
+
+    users = db.relationship('User', back_populates='agency', cascade='all, delete-orphan')
+    verified_domains = db.relationship('VerifiedAgencyDomain', back_populates='agency', cascade='all, delete-orphan')
     
     def __repr__(self):
         return f"<Agency(name={self.name}, location={self.location})>"
@@ -2473,9 +2324,9 @@ class Agency(db.Model):
         from flask import url_for, current_app
         if self.short_name:
             filename = f"{self.short_name.lower().replace(' ', '_')}_logo.png"
-            full_path = os.path.join(current_app.static_folder, 'images', 'agency_logos', filename)
+            full_path = os.path.join(current_app.static_folder, 'images', 'transit_logos', filename)
             if os.path.exists(full_path):
-                return url_for('static', filename=f'images/agency_logos/{filename}')
+                return url_for('static', filename=f'images/transit_logos/{filename}')
         return None
     
     @property
@@ -2484,9 +2335,9 @@ class Agency(db.Model):
         from flask import url_for, current_app
         if self.short_name:
             filename = f"{self.short_name.lower().replace(' ', '_')}_header.png"
-            full_path = os.path.join(current_app.static_folder, 'images', 'agency_headers', filename)
+            full_path = os.path.join(current_app.static_folder, 'images', 'transit_headers', filename)
             if os.path.exists(full_path):
-                return url_for('static', filename=f'images/agency_headers/{filename}')
+                return url_for('static', filename=f'images/transit_headers/{filename}')
         return None
 
 class FunctionalArea(db.Model):
@@ -2636,6 +2487,56 @@ class Tag(db.Model):
 
     def __repr__(self):
         return f"<Tag(name={self.name})>"
+
+
+class User(db.Model):
+    """Authenticated application user (backed by OAuth identity)."""
+
+    __tablename__ = 'users'
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    provider = db.Column(db.String(50), nullable=False)  # e.g. 'google', 'microsoft'
+    sub = db.Column(db.String(255), nullable=False)      # provider subject / stable external id
+
+    email = db.Column(db.String(255), nullable=False, unique=True, index=True)
+    name = db.Column(db.String(255))
+
+    agency_id = db.Column(db.Integer, db.ForeignKey('agencies.id'), nullable=True, index=True)
+    agency = db.relationship('Agency', back_populates='users')
+
+    is_admin = db.Column(db.Boolean, default=False, nullable=False)
+    is_active = db.Column(db.Boolean, default=True, nullable=False)
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    last_login_at = db.Column(db.DateTime)
+
+    __table_args__ = (
+        db.UniqueConstraint('provider', 'sub', name='uq_user_provider_sub'),
+        db.Index('ix_user_provider_sub', 'provider', 'sub'),
+    )
+
+    def __repr__(self):
+        return f"<User(email={self.email}, provider={self.provider})>"
+
+
+class VerifiedAgencyDomain(db.Model):
+    """Maps an email domain to an Agency for auto-association and access control."""
+
+    __tablename__ = 'verified_agency_domains'
+
+    id = db.Column(db.Integer, primary_key=True)
+    domain = db.Column(db.String(255), nullable=False, unique=True, index=True)
+
+    agency_id = db.Column(db.Integer, db.ForeignKey('agencies.id'), nullable=False, index=True)
+    agency = db.relationship('Agency', back_populates='verified_domains')
+
+    verified_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    verified_by_user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    verified_by = db.relationship('User', foreign_keys=[verified_by_user_id])
+
+    def __repr__(self):
+        return f"<VerifiedAgencyDomain(domain={self.domain}, agency_id={self.agency_id})>"
     
 class UserRole(db.Model):
     __tablename__ = 'user_roles'
@@ -2774,311 +2675,6 @@ class ConfigurationHistory(db.Model):
 
 # End of app/models/tran.py
 
-# Start of app/forms/forms.py
-# app/forms.py (create this file)
-from flask_wtf import FlaskForm
-from wtforms import StringField, TextAreaField, EmailField, URLField, TelField, FieldList, FormField
-from wtforms.validators import DataRequired, Email, URL, Optional, Length
-from wtforms.widgets import TextArea
-
-class MetadataField(FlaskForm):
-    """Sub-form for metadata key-value pairs"""
-    key = StringField('Key', validators=[Optional(), Length(max=100)])
-    value = StringField('Value', validators=[Optional(), Length(max=500)])
-
-class AgencyForm(FlaskForm):
-    """Form for creating and editing transit agencies"""
-    # Basic Information
-    name = StringField('Agency Name', 
-                      validators=[DataRequired(message="Agency name is required"), 
-                                Length(max=100, message="Name must be less than 100 characters")])
-    location = StringField('Location', 
-                          validators=[Optional(), Length(max=100)])
-    description = TextAreaField('Description', 
-                               validators=[Optional(), Length(max=500)],
-                               widget=TextArea())
-    address_hq = TextAreaField('Headquarters Address', 
-                              validators=[Optional(), Length(max=256)],
-                              widget=TextArea())
-    ceo = StringField('Chief Executive Officer', 
-                     validators=[Optional(), Length(max=128)])
-    contact_name = StringField('Primary Contact Name', 
-                              validators=[Optional(), Length(max=100)])
-    contact_email = EmailField('Primary Contact Email', 
-                              validators=[Optional(), Email(message="Please enter a valid email address")])
-    contact_phone = TelField('Primary Contact Phone', 
-                            validators=[Optional(), Length(max=50)])
-    phone_number = TelField('Main Phone Number', 
-                           validators=[Optional(), Length(max=64)])
-    website = URLField('Official Website', 
-                      validators=[Optional(), URL(message="Please enter a valid URL")])
-    transit_map_link = URLField('Transit Map URL', 
-                              validators=[Optional(), URL(message="Please enter a valid URL")])
-    email_domain = StringField('Agency Email Domain', validators=[Optional(), Length(max=255)])
-    
-    # Dynamic metadata fields will be handled separately in the template and route
-    def populate_from_agency(self, agency):
-        """Populate form with data from agency model"""
-        self.name.data = agency.name
-        self.location.data = agency.location
-        self.description.data = agency.description
-        self.address_hq.data = agency.address_hq
-        self.ceo.data = agency.ceo
-        self.contact_name.data = agency.contact_name
-        self.contact_email.data = agency.contact_email
-        self.contact_phone.data = agency.contact_phone
-        self.phone_number.data = agency.phone_number
-        self.website.data = agency.website
-        self.transit_map_link.data = agency.transit_map_link
-        self.email_domain.data = agency.email_domain
-    
-    def populate_agency(self, agency):
-        """Populate agency model with form data"""
-        agency.name = self.name.data
-        agency.location = self.location.data or None
-        agency.description = self.description.data or None
-        agency.address_hq = self.address_hq.data or None
-        agency.ceo = self.ceo.data or None
-        agency.contact_name = self.contact_name.data or None
-        agency.contact_email = self.contact_email.data or None
-        agency.contact_phone = self.contact_phone.data or None
-        agency.phone_number = self.phone_number.data or None
-        agency.website = self.website.data or None
-        agency.transit_map_link = self.transit_map_link.data or None
-        agency.email_domain = (self.email_domain.data or None)
-
-class VendorForm(FlaskForm):
-    name = StringField('Vendor Name', validators=[DataRequired(), Length(min=2, max=100)])
-    short_name = StringField('Short Name', validators=[Length(max=50)])
-    description = TextAreaField('Description', validators=[Length(max=500)])
-    website = URLField('Website', validators=[Optional(), URL()])
-    vendor_email = StringField('General Email', validators=[Optional(), Email(), Length(max=255)])
-    vendor_phone = StringField('General Phone', validators=[Optional(), Length(max=50)])
-    
-    def populate_from_vendor(self, vendor):
-        """Populate form fields from vendor object"""
-        self.name.data = vendor.name
-        self.short_name.data = vendor.short_name
-        self.description.data = vendor.description
-        self.website.data = vendor.website
-        self.vendor_email.data = vendor.vendor_email
-        self.vendor_phone.data = vendor.vendor_phone
-    
-    def populate_vendor(self, vendor):
-        """Populate vendor object from form data"""
-        vendor.name = self.name.data
-        vendor.short_name = self.short_name.data
-        vendor.description = self.description.data
-        vendor.website = self.website.data
-        vendor.vendor_email = self.vendor_email.data
-        vendor.vendor_phone = self.vendor_phone.data
-
-class ComponentForm(FlaskForm):
-    name = StringField('Component Name', validators=[DataRequired(), Length(min=2, max=100)])
-    short_description = StringField('Short Description', validators=[Optional(), Length(max=200)])
-    description = TextAreaField('Description', validators=[Optional(), Length(max=1000)])
-    additional_metadata = TextAreaField('Additional Metadata (JSON)', validators=[Optional(), Length(max=5000)])
-
-    def populate_from_component(self, component):
-        self.name.data = component.name
-        self.short_description.data = component.short_description
-        self.description.data = component.description
-        if component.additional_metadata:
-            import json
-            try:
-                self.additional_metadata.data = json.dumps(component.additional_metadata, indent=2)
-            except Exception:
-                self.additional_metadata.data = ''
-
-    def populate_component(self, component):
-        component.name = self.name.data
-        component.short_description = self.short_description.data or None
-        component.description = self.description.data or None
-        if self.additional_metadata.data:
-            import json
-            try:
-                component.additional_metadata = json.loads(self.additional_metadata.data)
-            except Exception:
-                component.additional_metadata = None
-        else:
-            component.additional_metadata = None
-
-# =============================
-# Phase 3 ADDITIVE NEW FORMS
-# =============================
-
-class ProductForm(FlaskForm):
-    name = StringField('Product Name', validators=[DataRequired(), Length(min=2, max=150)])
-    vendor_id = StringField('Vendor', validators=[Optional(), Length(max=10)])
-    description = TextAreaField('Description', validators=[Optional(), Length(max=1000)])
-    parent_product_id = StringField('Parent Product', validators=[Optional(), Length(max=10)])
-    lifecycle_stage = StringField('Lifecycle Stage', validators=[Optional(), Length(max=50)])
-    additional_metadata = TextAreaField('Additional Metadata (JSON)', validators=[Optional(), Length(max=5000)])
-
-    def populate_from_product(self, product):
-        self.name.data = product.name
-        self.vendor_id.data = str(product.vendor_id) if product.vendor_id else ''
-        self.description.data = product.description
-        self.parent_product_id.data = str(product.parent_product_id) if product.parent_product_id else ''
-        self.lifecycle_stage.data = product.lifecycle_stage.value if getattr(product, 'lifecycle_stage', None) else ''
-        if product.additional_metadata:
-            import json
-            try:
-                self.additional_metadata.data = json.dumps(product.additional_metadata, indent=2)
-            except Exception:
-                self.additional_metadata.data = ''
-
-    def populate_product(self, product):
-        product.name = self.name.data
-        product.vendor_id = int(self.vendor_id.data) if self.vendor_id.data else None
-        product.description = self.description.data or None
-        product.parent_product_id = int(self.parent_product_id.data) if self.parent_product_id.data else None
-        from app.models.tran import LifecycleStage
-        if self.lifecycle_stage.data:
-            try:
-                product.lifecycle_stage = LifecycleStage(self.lifecycle_stage.data)
-            except Exception:
-                product.lifecycle_stage = None
-        if self.additional_metadata.data:
-            import json
-            try:
-                product.additional_metadata = json.loads(self.additional_metadata.data)
-            except Exception:
-                product.additional_metadata = None
-        else:
-            product.additional_metadata = None
-
-class ProductVersionForm(FlaskForm):
-    product_id = StringField('Product', validators=[DataRequired(), Length(max=10)])
-    version = StringField('Version', validators=[DataRequired(), Length(max=100)])
-    release_date = StringField('Release Date', validators=[Optional(), Length(max=10)])  # YYYY-MM-DD
-    support_end_date = StringField('Support End Date', validators=[Optional(), Length(max=10)])
-    notes = TextAreaField('Notes', validators=[Optional(), Length(max=1000)])
-
-    def populate_from_version(self, pv):
-        self.product_id.data = str(pv.product_id)
-        self.version.data = pv.version
-        self.release_date.data = pv.release_date.strftime('%Y-%m-%d') if pv.release_date else ''
-        self.support_end_date.data = pv.support_end_date.strftime('%Y-%m-%d') if pv.support_end_date else ''
-        self.notes.data = pv.notes
-
-    def populate_version(self, pv):
-        pv.product_id = int(self.product_id.data)
-        pv.version = self.version.data
-        from datetime import datetime
-        if self.release_date.data:
-            try:
-                pv.release_date = datetime.strptime(self.release_date.data, '%Y-%m-%d').date()
-            except ValueError:
-                pass
-        if self.support_end_date.data:
-            try:
-                pv.support_end_date = datetime.strptime(self.support_end_date.data, '%Y-%m-%d').date()
-            except ValueError:
-                pass
-        pv.notes = self.notes.data or None
-
-class ConfigurationForm(FlaskForm):
-    agency_id = StringField('Agency', validators=[DataRequired(), Length(max=10)])
-    function_id = StringField('Function', validators=[DataRequired(), Length(max=10)])
-    component_id = StringField('Component', validators=[DataRequired(), Length(max=10)])
-    status = StringField('Status', validators=[Optional(), Length(max=50)])
-    deployment_date = StringField('Deployment Date', validators=[Optional(), Length(max=10)])
-    version_label = StringField('Version Label', validators=[Optional(), Length(max=100)])
-    implementation_notes = TextAreaField('Implementation Notes', validators=[Optional(), Length(max=1000)])
-    security_review_date = StringField('Security Review Date', validators=[Optional(), Length(max=10)])
-    additional_metadata = TextAreaField('Additional Metadata (JSON)', validators=[Optional(), Length(max=5000)])
-
-    def populate_from_configuration(self, c):
-        self.agency_id.data = str(c.agency_id)
-        self.function_id.data = str(c.function_id)
-        self.component_id.data = str(c.component_id)
-        self.status.data = c.status
-        self.deployment_date.data = c.deployment_date.strftime('%Y-%m-%d') if c.deployment_date else ''
-        self.version_label.data = c.version_label
-        self.implementation_notes.data = c.implementation_notes
-        self.security_review_date.data = c.security_review_date.strftime('%Y-%m-%d') if c.security_review_date else ''
-        if c.additional_metadata:
-            import json
-            try:
-                self.additional_metadata.data = json.dumps(c.additional_metadata, indent=2)
-            except Exception:
-                self.additional_metadata.data = ''
-
-    def populate_configuration(self, c):
-        c.agency_id = int(self.agency_id.data)
-        c.function_id = int(self.function_id.data)
-        c.component_id = int(self.component_id.data)
-        c.status = self.status.data or 'Active'
-        from datetime import datetime
-        if self.deployment_date.data:
-            try:
-                c.deployment_date = datetime.strptime(self.deployment_date.data, '%Y-%m-%d').date()
-            except ValueError:
-                pass
-        c.version_label = self.version_label.data or None
-        c.implementation_notes = self.implementation_notes.data or None
-        if self.security_review_date.data:
-            try:
-                c.security_review_date = datetime.strptime(self.security_review_date.data, '%Y-%m-%d').date()
-            except ValueError:
-                pass
-        if self.additional_metadata.data:
-            import json
-            try:
-                c.additional_metadata = json.loads(self.additional_metadata.data)
-            except Exception:
-                c.additional_metadata = None
-        else:
-            c.additional_metadata = None
-
-class ConfigurationProductForm(FlaskForm):
-    configuration_id = StringField('Configuration', validators=[Optional(), Length(max=10)])  # may come from URL
-    product_id = StringField('Product', validators=[DataRequired(), Length(max=10)])
-    product_version_id = StringField('Product Version', validators=[Optional(), Length(max=10)])
-    status = StringField('Status', validators=[Optional(), Length(max=50)])
-    deployment_date = StringField('Deployment Date', validators=[Optional(), Length(max=10)])
-    settings = TextAreaField('Settings (JSON)', validators=[Optional(), Length(max=5000)])
-
-    def populate_from_configuration_product(self, cp):
-        self.configuration_id.data = str(cp.configuration_id)
-        self.product_id.data = str(cp.product_id)
-        self.product_version_id.data = str(cp.product_version_id) if cp.product_version_id else ''
-        self.status.data = cp.status
-        self.deployment_date.data = cp.deployment_date.strftime('%Y-%m-%d') if cp.deployment_date else ''
-        if cp.settings:
-            import json
-            try:
-                self.settings.data = json.dumps(cp.settings, indent=2)
-            except Exception:
-                self.settings.data = ''
-
-    def populate_configuration_product(self, cp):
-        if self.configuration_id.data:
-            cp.configuration_id = int(self.configuration_id.data)
-        cp.product_id = int(self.product_id.data)
-        cp.product_version_id = self.product_version_id.data if self.product_version_id.data else None
-        cp.status = self.status.data or 'Active'
-        from datetime import datetime
-        if self.deployment_date.data:
-            try:
-                cp.deployment_date = datetime.strptime(self.deployment_date.data, '%Y-%m-%d').date()
-            except ValueError:
-                pass
-        if self.settings.data:
-            import json
-            try:
-                cp.settings = json.loads(self.settings.data)
-            except Exception:
-                cp.settings = None
-        else:
-            cp.settings = None
-
-# =============================
-# End Phase 3 additions
-# =============================
-# End of app/forms/forms.py
-
 # Start of app/agents/__init__.py
 # app/agents/__init__.py
 """
@@ -3131,87 +2727,45 @@ __all__ = [
 Agency Agent - builds or updates transit agency records using LLM with web search.
 """
 
+import json
+import re
 from typing import Any
 
 from .base import BaseAgent, AgentResult
 
 
-# Schema for structured agency data extraction
-AGENCY_SCHEMA = {
-    'type': 'object',
-    'properties': {
-        'name': {'type': 'string', 'description': 'Official agency name'},
-        'short_name': {'type': 'string', 'description': 'Short name/acronym (e.g., WMATA, BART)'},
-        'location': {'type': 'string', 'description': 'City and state (e.g., Portland, Oregon)'},
-        'description': {'type': 'string', 'description': 'Brief description of the agency (1-2 sentences)'},
-        'website': {'type': 'string', 'description': 'Official website URL'},
-        'ceo': {'type': 'string', 'description': 'Current CEO/General Manager/Executive Director name'},
-        'address_hq': {'type': 'string', 'description': 'Headquarters address'},
-        'phone_number': {'type': 'string', 'description': 'Main phone number'},
-        'contact_email': {'type': 'string', 'description': 'General contact email'},
-        'transit_map_link': {'type': 'string', 'description': 'URL to system map'},
-        'email_domain': {'type': 'string', 'description': 'Agency email domain (e.g., trimet.org)'},
-        'confidence': {
-            'type': 'object',
-            'description': 'Confidence scores (0-1) for each field',
-            'properties': {
-                'name': {'type': 'number'},
-                'short_name': {'type': 'number'},
-                'location': {'type': 'number'},
-                'description': {'type': 'number'},
-                'website': {'type': 'number'},
-                'ceo': {'type': 'number'},
-                'address_hq': {'type': 'number'},
-                'phone_number': {'type': 'number'},
-                'contact_email': {'type': 'number'},
-                'transit_map_link': {'type': 'number'},
-                'email_domain': {'type': 'number'},
-            },
-        },
-    },
-    'required': ['name', 'confidence'],
-}
+SYSTEM_PROMPT = """You are a research assistant gathering information about public transit agencies.
 
+Your task is to:
+1. Search the web for accurate, current information about the specified transit agency
+2. Return the findings as a JSON object with no other text or formatting
 
-SEARCH_SYSTEM_PROMPT = """You are a research assistant gathering information about public transit agencies.
-
-Your task is to find accurate, current information about the specified transit agency. Focus on:
+Research priorities:
 1. Official name and common abbreviations
-2. Headquarters location and address
-3. Current leadership (CEO/General Manager/Executive Director)
-4. Official website and contact information
-5. System description
+2. Headquarters location and full address  
+3. Current leadership (CEO/General Manager/Executive Director) - verify this is current
+4. Official website and contact information (phone, email)
+5. Brief description of the transit system
 
-Use web search to find the most up-to-date information. Prioritize official sources (.gov domains, 
-the agency's own website, official press releases) over third-party sources.
+Prioritize official sources (.gov domains, the agency's own website, official press releases).
 
-Be thorough but concise. If you cannot find certain information with confidence, note that."""
+CRITICAL: After researching, respond with ONLY a valid JSON object. No markdown, no explanation.
 
+Only include fields where you found clear, reliable information. Omit uncertain fields.
 
-EXTRACTION_SYSTEM_PROMPT = """You are a data extraction assistant. Your job is to extract structured 
-information about a transit agency from the provided research text.
-
-Extract the following fields if available:
-- name: The official full name of the agency
-- short_name: Common abbreviation or acronym (e.g., BART, WMATA, TriMet)
-- location: City and state where the agency is headquartered
-- description: A brief 1-2 sentence description of what the agency operates
-- website: The official website URL (must start with http:// or https://)
-- ceo: The current CEO, General Manager, or Executive Director's full name
-- address_hq: Full headquarters mailing address
-- phone_number: Main contact phone number
-- contact_email: General contact email address
-- transit_map_link: URL to the system/route map
-- email_domain: The domain used for agency emails (e.g., trimet.org)
-
-For each field, also provide a confidence score from 0 to 1:
-- 1.0: Found on official source, very confident
-- 0.8-0.9: Found on reliable source, confident
-- 0.5-0.7: Found but uncertain or potentially outdated
-- Below 0.5: Guessed or very uncertain
-
-If a field cannot be determined, omit it from the response (don't include null values).
-Only include the confidence object with scores for fields you did include."""
+{
+  "name": "Official agency name",
+  "short_name": "Acronym like BART or WMATA", 
+  "location": "City, State",
+  "description": "Brief 1-2 sentence description",
+  "website": "https://...",
+  "ceo": "Full name of current CEO/GM/Executive Director",
+  "address_hq": "Full headquarters address",
+  "phone_number": "Main phone number",
+  "contact_email": "General contact email",
+  "transit_map_link": "URL to system map",
+  "email_domain": "domain.org"
+}"""
 
 
 class AgencyAgent(BaseAgent):
@@ -3223,7 +2777,7 @@ class AgencyAgent(BaseAgent):
     
     def execute(self, input_data: dict, existing_record: Any | None = None) -> AgentResult:
         """
-        Execute agency research and data extraction.
+        Execute agency research and data extraction in a single LLM call.
         
         Args:
             input_data: {'name': 'Agency Name'} - the agency to research
@@ -3244,37 +2798,24 @@ class AgencyAgent(BaseAgent):
         self._log('decision', {'action': 'start', 'agency_name': agency_name})
         
         try:
-            # Step 1: Research the agency using web search
-            research_text = self._research_agency(agency_name)
+            # Single call: research + extract
+            draft = self._research_and_extract(agency_name)
             
-            if not research_text:
-                return self._create_result(
-                    success=False,
-                    error='Failed to gather agency information',
-                )
-            
-            # Step 2: Extract structured data
-            extracted = self._extract_agency_data(agency_name, research_text)
-            
-            if '_parse_error' in extracted:
+            if '_parse_error' in draft:
                 self._log('error', {
                     'stage': 'extraction',
-                    'error': extracted.get('_parse_error'),
+                    'error': draft.get('_parse_error'),
                 })
                 return self._create_result(
                     success=False,
-                    error=f"Failed to parse extracted data: {extracted.get('_parse_error')}",
+                    error=f"Failed to parse response: {draft.get('_parse_error')}",
                 )
             
-            # Step 3: Apply confidence filtering
-            confidences = extracted.pop('confidence', {})
-            draft, skipped = self._filter_by_confidence(extracted, confidences)
-            
-            # Step 4: Try to fetch logo if we have a website
+            # Try to fetch logo if we have a website
             if draft.get('website'):
                 self._fetch_agency_images(draft)
             
-            # Step 5: Compute diff if updating
+            # Compute diff if updating
             diff = None
             is_update = existing_record is not None
             
@@ -3289,12 +2830,11 @@ class AgencyAgent(BaseAgent):
             result = self._create_result(
                 success=True,
                 draft=draft,
-                skipped_fields=skipped,
+                skipped_fields={},
                 diff=diff,
                 is_update=is_update,
             )
             
-            # Save audit log
             self._save_audit_log(result, input_data)
             
             return result
@@ -3306,51 +2846,62 @@ class AgencyAgent(BaseAgent):
                 error=str(e),
             )
     
-    def _research_agency(self, agency_name: str) -> str | None:
-        """Use LLM with web search to research the agency."""
+    def _research_and_extract(self, agency_name: str) -> dict:
+        """
+        Single LLM call: search the web and return structured JSON.
+        """
         messages = [
             {
                 'role': 'user',
-                'content': f"""Research the public transit agency: "{agency_name}"
-
-Find and summarize:
-1. Official name and any common abbreviations
-2. Location (city, state)
-3. What type of transit they operate (bus, rail, ferry, etc.)
-4. Current CEO/General Manager/Executive Director
-5. Official website
-6. Headquarters address and contact information
-7. Any other relevant details
-
-Provide a comprehensive summary of your findings.""",
+                'content': f'Research the public transit agency "{agency_name}" and return the JSON data.',
             }
         ]
         
-        response = self._call_llm(messages, SEARCH_SYSTEM_PROMPT, use_search=True)
-        return response.content if response else None
+        response = self._call_llm(messages, SYSTEM_PROMPT, use_search=True)
+        
+        return self._extract_json_from_response(response.content)
     
-    def _extract_agency_data(self, agency_name: str, research_text: str) -> dict:
-        """Extract structured data from research text."""
-        messages = [
-            {
-                'role': 'user',
-                'content': f"""Based on the following research about "{agency_name}", extract structured data.
-
-RESEARCH:
-{research_text}
-
-Extract the agency information into the required JSON format with confidence scores.""",
-            }
-        ]
+    def _extract_json_from_response(self, content: str) -> dict:
+        """Extract JSON from LLM response, handling various formats."""
+        content = content.strip()
         
-        return self._call_llm_structured(messages, EXTRACTION_SYSTEM_PROMPT, AGENCY_SCHEMA)
+        # Try direct parse first
+        try:
+            return json.loads(content)
+        except json.JSONDecodeError:
+            pass
+        
+        # Remove markdown code blocks
+        if '```' in content:
+            match = re.search(r'```(?:json)?\s*([\s\S]*?)```', content)
+            if match:
+                try:
+                    return json.loads(match.group(1).strip())
+                except json.JSONDecodeError:
+                    pass
+        
+        # Find JSON object between first { and last }
+        start = content.find('{')
+        end = content.rfind('}')
+        if start != -1 and end != -1 and end > start:
+            try:
+                return json.loads(content[start:end + 1])
+            except json.JSONDecodeError as e:
+                return {
+                    '_parse_error': f'Found JSON-like content but failed to parse: {e}',
+                    '_raw_content': content[start:end + 1][:500],
+                }
+        
+        return {
+            '_parse_error': 'Could not find valid JSON in response',
+            '_raw_content': content[:500],
+        }
     
     def _fetch_agency_images(self, draft: dict) -> None:
         """Attempt to fetch logo and header images."""
         website = draft.get('website')
         short_name = draft.get('short_name') or draft.get('name', 'agency')
         
-        # Fetch logo
         logo_result = self._call_tool('image_fetch', {
             'entity_type': 'agency',
             'entity_name': draft.get('name', ''),
@@ -3363,7 +2914,6 @@ Extract the agency information into the required JSON format with confidence sco
             draft['_logo_fetched'] = True
             draft['_logo_path'] = logo_result.data.get('filepath')
         
-        # Fetch header
         header_result = self._call_tool('image_fetch', {
             'entity_type': 'agency',
             'entity_name': draft.get('name', ''),
@@ -3393,7 +2943,7 @@ Extract the agency information into the required JSON format with confidence sco
         }
 
 
-# Singleton instance for easy import
+# Singleton instance
 agency_agent = AgencyAgent()
 # End of app/agents/agency_agent.py
 
@@ -3891,697 +3441,6 @@ document.body.addEventListener('htmx:afterSwap', function(e) {
 {% endblock %}
 # End of app/templates/index.html
 
-# Start of app/templates/vendors.html
-<!-- app/templates/vendors.html -->
-
-{% extends "base.html" %}
-{% block content %}
-
-<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-  
-  <!-- Page Header -->
-  <div class="mb-8">
-    <h1 class="text-3xl font-bold text-white mb-2">Vendor Management</h1>
-    <p class="text-slate-400">Manage vendor relationships and track system portfolios across your transit network.</p>
-  </div>
-
-  <!-- Stats Overview -->
-  <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-    <div class="glass-effect rounded-xl p-6 border border-slate-700/50">
-      <div class="flex items-center justify-between mb-2">
-        <div class="w-10 h-10 bg-gradient-to-r from-purple-500 to-purple-600 rounded-lg flex items-center justify-center">
-          <svg class="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 20 20">
-            <path d="M13 6a3 3 0 11-6 0 3 3 0 016 0zM18 8a2 2 0 11-4 0 2 2 0 014 0zM14 15a4 4 0 00-8 0v3h8v-3z"/>
-          </svg>
-        </div>
-        <span class="text-2xl font-bold text-white" hx-get="/api/count/vendors" hx-trigger="load">--</span>
-      </div>
-      <h3 class="text-slate-400 text-sm font-medium">Total Vendors</h3>
-    </div>
-
-    <div class="glass-effect rounded-xl p-6 border border-slate-700/50">
-      <div class="flex items-center justify-between mb-2">
-        <div class="w-10 h-10 bg-gradient-to-r from-green-500 to-green-600 rounded-lg flex items-center justify-center">
-          <svg class="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 20 20">
-            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
-          </svg>
-        </div>
-        <span class="text-2xl font-bold text-white" id="active-vendors-count">--</span>
-      </div>
-      <h3 class="text-slate-400 text-sm font-medium">Active Vendors</h3>
-    </div>
-
-    <div class="glass-effect rounded-xl p-6 border border-slate-700/50">
-      <div class="flex items-center justify-between mb-2">
-        <div class="w-10 h-10 bg-gradient-to-r from-blue-500 to-blue-600 rounded-lg flex items-center justify-center">
-          <svg class="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 20 20">
-            <path d="M3 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zM3 10a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H4a1 1 0 01-1-1v-6zM14 9a1 1 0 00-1 1v6a1 1 0 001 1h2a1 1 0 001-1v-6a1 1 0 00-1-1h-2z"/>
-          </svg>
-        </div>
-        <span class="text-2xl font-bold text-white" id="avg-systems-count">--</span>
-      </div>
-      <h3 class="text-slate-400 text-sm font-medium">Avg Systems/Vendor</h3>
-    </div>
-
-    <div class="glass-effect rounded-xl p-6 border border-slate-700/50">
-      <div class="flex items-center justify-between mb-2">
-        <div class="w-10 h-10 bg-gradient-to-r from-yellow-500 to-yellow-600 rounded-lg flex items-center justify-center">
-          <svg class="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 20 20">
-            <path fill-rule="evenodd" d="M3.172 5.172a4 4 0 015.656 0L10 6.343l1.172-1.171a4 4 0 115.656 5.656L10 17.657l-6.828-6.829a4 4 0 010-5.656z" clip-rule="evenodd"/>
-          </svg>
-        </div>
-        <span class="text-2xl font-bold text-white" id="top-vendor-count">--</span>
-      </div>
-      <h3 class="text-slate-400 text-sm font-medium">Top Vendor Systems</h3>
-    </div>
-  </div>
-
-  <!-- Enhanced Search and Filters -->
-  <div class="glass-effect rounded-xl p-6 border border-slate-700/50 mb-8" id="vendor-filters-container">
-    <form id="vendor-filters" class="space-y-4">
-      
-      <!-- Main Filter Row -->
-      <div class="flex flex-col lg:flex-row gap-4 items-start lg:items-center">
-        
-        <!-- Search Input -->
-        <div class="relative flex-1 max-w-md">
-          <input type="text" 
-                 id="vendor-search" 
-                 name="search"
-                 placeholder="Search vendors..." 
-                 class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 pl-10 text-white placeholder-slate-400 focus:border-purple-500 focus:ring-1 focus:ring-purple-500 focus:outline-none transition-colors"
-                 hx-get="/api/vendors/list" 
-                 hx-target="#vendors-list" 
-                 hx-trigger="keyup changed delay:300ms" 
-                 hx-include="#vendor-filters">
-          <svg class="absolute left-3 top-3 w-4 h-4 text-slate-400" fill="currentColor" viewBox="0 0 20 20">
-            <path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"/>
-          </svg>
-        </div>
-
-        <!-- Agency Filter -->
-        <div class="flex-1 max-w-xs">
-          <select id="agency-filter" 
-                  name="agency"
-                  class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 focus:outline-none transition-colors"
-                  hx-get="/api/vendors/list" 
-                  hx-target="#vendors-list" 
-                  hx-trigger="change" 
-                  hx-include="#vendor-filters">
-            <option value="">All Agencies</option>
-            <!-- Options will be loaded dynamically -->
-          </select>
-        </div>
-
-        <!-- Functional Area Filter -->
-        <div class="flex-1 max-w-xs">
-          <select id="functional-area-filter" 
-                  name="functional_area"
-                  class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none transition-colors"
-                  hx-get="/api/vendors/list" 
-                  hx-target="#vendors-list" 
-                  hx-trigger="change" 
-                  hx-include="#vendor-filters">
-            <option value="">All Functional Areas</option>
-            <!-- Options will be loaded dynamically -->
-          </select>
-        </div>
-
-        <!-- Sort Options -->
-        <div class="flex-1 max-w-xs">
-          <select id="sort-select" 
-                  name="sort"
-                  class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white focus:border-green-500 focus:ring-1 focus:ring-green-500 focus:outline-none transition-colors"
-                  hx-get="/api/vendors/list" 
-                  hx-target="#vendors-list" 
-                  hx-trigger="change" 
-                  hx-include="#vendor-filters">
-            <option value="name">Sort by Name</option>
-            <option value="components">Sort by Component Count</option>
-            <option value="recent">Sort by Recent Activity</option>
-          </select>
-        </div>
-      </div>
-
-      <!-- Active Filters and Actions Row -->
-      <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pt-4 border-t border-slate-700/30">
-        
-        <!-- Active Filter Badges -->
-        <div class="flex-1">
-          <div class="flex items-center space-x-2">
-            <span class="text-sm text-slate-400">Filters:</span>
-            <div id="active-filters" class="flex flex-wrap gap-2">
-              <!-- Filter badges will be populated by JavaScript -->
-            </div>
-            <button type="button" 
-                    onclick="clearAllFilters('#vendor-filters', '#vendors-list')"
-                    class="text-xs text-slate-500 hover:text-slate-300 transition-colors ml-2"
-                    id="clear-filters-btn" style="display: none;">
-              Clear All
-            </button>
-          </div>
-        </div>
-
-        <!-- Action Buttons -->
-        <div class="flex gap-2">
-          <button type="button"
-                  hx-get="/api/vendors/form" 
-                  hx-target="#vendor-details" 
-                  hx-swap="innerHTML"
-                  class="px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-600 rounded-lg font-medium hover:from-purple-700 hover:to-pink-700 transition-all text-white shadow-lg">
-            <svg class="w-4 h-4 inline mr-2" fill="currentColor" viewBox="0 0 20 20">
-              <path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd"/>
-            </svg>
-            Add Vendor
-          </button>
-          
-          <button type="button" 
-                  class="px-4 py-2 bg-slate-800 hover:bg-slate-700 rounded-lg font-medium transition-colors text-white">
-            <svg class="w-4 h-4 inline mr-2" fill="currentColor" viewBox="0 0 20 20">
-              <path d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z"/>
-              <path fill-rule="evenodd" d="M4 5a2 2 0 012-2v1a2 2 0 00-2 2v6a2 2 0 002 2h8a2 2 0 002-2V6a2 2 0 00-2-2V3a2 2 0 012 2v8a4 4 0 01-4 4H6a4 4 0 01-4-4V5z" clip-rule="evenodd"/>
-            </svg>
-            Export List
-          </button>
-        </div>
-      </div>
-    </form>
-  </div>
-
-  <!-- Main Content Area -->
-  <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
-    
-    <!-- Vendors List -->
-    <div class="lg:col-span-2">
-      <div class="glass-effect rounded-xl p-6 border border-slate-700/50">
-        <div class="flex items-center justify-between mb-6">
-          <h2 class="text-xl font-semibold text-white">Vendor Portfolio</h2>
-          <div class="flex items-center space-x-2 text-sm text-slate-400">
-            <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-              <path fill-rule="evenodd" d="M3 3a1 1 0 000 2v8a2 2 0 002 2h2.586l-1.293 1.293a1 1 0 101.414 1.414L10 15.414l2.293 2.293a1 1 0 001.414-1.414L12.414 15H15a2 2 0 002-2V5a1 1 0 100-2H3zm11.707 4.707a1 1 0 00-1.414-1.414L10 9.586 8.707 8.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
-            </svg>
-            <span id="vendor-count-display">Loading...</span>
-          </div>
-        </div>
-        
-        <div id="vendors-list" class="space-y-6" hx-get="/api/vendors/list" hx-trigger="load">
-          <!-- Vendors will be loaded here -->
-          <div class="animate-pulse space-y-6">
-            <div class="h-32 bg-slate-800 rounded-lg"></div>
-            <div class="h-32 bg-slate-800 rounded-lg"></div>
-            <div class="h-32 bg-slate-800 rounded-lg"></div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Sidebar -->
-    <div class="space-y-6 sticky top-24 max-h-[calc(100vh-6rem)] overflow-y-auto">
-      <!-- Vendor Details Panel -->
-      <div id="vendor-details">
-        <!-- Default state -->
-        <div class="glass-effect rounded-xl p-6 border border-slate-700/50 text-center">
-          <div class="w-16 h-16 bg-slate-700 rounded-full flex items-center justify-center mx-auto mb-4">
-            <svg class="w-8 h-8 text-slate-500" fill="currentColor" viewBox="0 0 20 20">
-              <path d="M13 6a3 3 0 11-6 0 3 3 0 016 0zM18 8a2 2 0 11-4 0 2 2 0 014 0zM14 15a4 4 0 00-8 0v3h8v-3z"/>
-            </svg>
-          </div>
-          <h3 class="text-lg font-medium text-slate-400 mb-2">Vendor Details</h3>
-          <p class="text-slate-500 text-sm">Click on a vendor to view detailed information, system portfolio, and contact details.</p>
-        </div>
-      </div>
-
-      <!-- Top Integration Standards -->
-      <div class="glass-effect rounded-xl p-6 border border-slate-700/50">
-        <h3 class="text-lg font-semibold text-white mb-4">Integration Standards</h3>
-        <div id="integration-standards" hx-get="/api/integration/standards" hx-trigger="load" class="space-y-2">
-          <!-- Integration standards will be loaded here -->
-          <div class="animate-pulse space-y-2">
-            <div class="h-6 bg-slate-800 rounded"></div>
-            <div class="h-6 bg-slate-800 rounded"></div>
-            <div class="h-6 bg-slate-800 rounded"></div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Vendor Performance Insights -->
-      <div class="glass-effect rounded-xl p-6 border border-slate-700/50">
-        <h3 class="text-lg font-semibold text-white mb-4">Performance Insights</h3>
-        <div class="space-y-3" id="performance-insights">
-          <div class="flex justify-between items-center p-3 bg-slate-800/30 rounded-lg">
-            <span class="text-slate-300 text-sm">Most Reliable</span>
-            <span class="text-green-400 font-medium text-sm" id="most-reliable-vendor">--</span>
-          </div>
-          <div class="flex justify-between items-center p-3 bg-slate-800/30 rounded-lg">
-            <span class="text-slate-300 text-sm">Newest Partnership</span>
-            <span class="text-blue-400 font-medium text-sm" id="newest-vendor">--</span>
-          </div>
-          <div class="flex justify-between items-center p-3 bg-slate-800/30 rounded-lg">
-            <span class="text-slate-300 text-sm">Most Systems</span>
-            <span class="text-purple-400 font-medium text-sm" id="largest-vendor">--</span>
-          </div>
-        </div>
-      </div>
-
-      <!-- Quick Actions -->
-      <div class="glass-effect rounded-xl p-6 border border-slate-700/50">
-        <h3 class="text-lg font-semibold text-white mb-4">Quick Actions</h3>
-        <div class="space-y-3">
-          <button hx-get="/api/vendors/form" hx-target="#vendor-details" hx-swap="innerHTML"
-                  class="w-full px-4 py-3 bg-gradient-to-r from-purple-600 to-pink-600 rounded-lg text-sm font-medium hover:from-purple-700 hover:to-pink-700 transition-all text-white shadow-lg">
-            <svg class="w-4 h-4 inline mr-2" fill="currentColor" viewBox="0 0 20 20">
-              <path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd"/>
-            </svg>
-            Add New Vendor
-          </button>
-          <button class="w-full px-4 py-3 bg-slate-800 hover:bg-slate-700 rounded-lg text-sm font-medium transition-colors">
-            <svg class="w-4 h-4 inline mr-2" fill="currentColor" viewBox="0 0 20 20">
-              <path d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z"/>
-              <path fill-rule="evenodd" d="M4 5a2 2 0 012-2v1a2 2 0 00-2 2v6a2 2 0 002 2h8a2 2 0 002-2V6a2 2 0 00-2-2V3a2 2 0 012 2v8a4 4 0 01-4 4H6a4 4 0 01-4-4V5z" clip-rule="evenodd"/>
-            </svg>
-            Vendor Report
-          </button>
-          <button class="w-full px-4 py-3 bg-slate-800 hover:bg-slate-700 rounded-lg text-sm font-medium transition-colors">
-            <svg class="w-4 h-4 inline mr-2" fill="currentColor" viewBox="0 0 20 20">
-              <path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd"/>
-            </svg>
-            Export Contacts
-          </button>
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
-
-{% endblock %}
-
-{% block scripts %}
-<script>
-// =============================================================================
-// VENDOR PAGE STATE MANAGEMENT - Embedded Controller
-// =============================================================================
-
-class VendorPageController {
-  constructor() {
-    this.currentFilters = {
-      search: '',
-      agency: '',
-      functional_area: '',
-      sort: 'name'
-    };
-    this.selectedVendorId = null;
-    this.isLoading = false;
-    this.refreshTimers = [];
-    
-    this.init();
-  }
-
-  init() {
-    this.setupEventListeners();
-    this.loadInitialData();
-    this.setupPeriodicRefresh();
-    console.log('🏢 Vendor page controller initialized');
-  }
-
-  setupEventListeners() {
-    const form = document.getElementById('vendor-filters');
-    if (form) {
-      form.addEventListener('input', this.handleFilterChange.bind(this));
-      form.addEventListener('change', this.handleFilterChange.bind(this));
-    }
-
-    document.body.addEventListener('htmx:beforeRequest', this.handleBeforeRequest.bind(this));
-    document.body.addEventListener('htmx:afterRequest', this.handleAfterRequest.bind(this));
-    document.body.addEventListener('htmx:afterSwap', this.handleAfterSwap.bind(this));
-    document.body.addEventListener('htmx:responseError', this.handleResponseError.bind(this));
-  }
-
-  async loadInitialData() {
-    try {
-      await Promise.all([
-        this.loadFilterOptions(),
-        this.loadVendorStats(),
-        this.loadVendorPerformance()
-      ]);
-    } catch (error) {
-      console.error('Error loading initial data:', error);
-      showToast('Error loading page data. Please refresh.', false);
-    }
-  }
-
-  async loadFilterOptions() {
-    try {
-      const agencyResponse = await fetch('/api/vendors/filter-options/agencies');
-      const agencyHtml = await agencyResponse.text();
-      const agencySelect = document.getElementById('agency-filter');
-      if (agencySelect) agencySelect.innerHTML = agencyHtml;
-
-      const faResponse = await fetch('/api/vendors/filter-options/functional-areas');
-      const faHtml = await faResponse.text();
-      const faSelect = document.getElementById('functional-area-filter');
-      if (faSelect) faSelect.innerHTML = faHtml;
-    } catch (error) {
-      console.error('Error loading filter options:', error);
-    }
-  }
-
-  handleFilterChange(event) {
-    const formData = new FormData(document.getElementById('vendor-filters'));
-    const newFilters = {};
-    
-    for (const [key, value] of formData.entries()) {
-      newFilters[key] = value.trim();
-    }
-    this.currentFilters = { ...this.currentFilters, ...newFilters };
-
-    if (event.target.name === 'search') {
-      clearTimeout(this.searchTimeout);
-      this.searchTimeout = setTimeout(() => {
-        this.refreshVendorList();
-        this.updateActiveFilters();
-      }, 300);
-    } else {
-      this.refreshVendorList();
-      this.updateActiveFilters();
-    }
-
-    this.loadVendorStats();
-    this.loadVendorPerformance();
-  }
-
-  refreshVendorList() {
-    if (this.isLoading) return;
-    
-    const vendorsList = document.getElementById('vendors-list');
-    if (vendorsList) {
-      this.showListLoading(true);
-      htmx.trigger(vendorsList, 'refresh');
-    }
-  }
-
-  updateActiveFilters() {
-    const filterContainer = document.getElementById('active-filters');
-    const clearBtn = document.getElementById('clear-filters-btn');
-    
-    if (!filterContainer) return;
-    
-    filterContainer.innerHTML = '';
-    let hasActiveFilters = false;
-    
-    Object.entries(this.currentFilters).forEach(([key, value]) => {
-      if (value && value !== '' && key !== 'sort') {
-        hasActiveFilters = true;
-        
-        let displayKey = key;
-        if (key === 'functional_area') displayKey = 'functional area';
-        
-        const badge = document.createElement('span');
-        badge.className = 'inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-purple-600/20 text-purple-300 border border-purple-600/30';
-        badge.innerHTML = `
-          ${displayKey}: ${value}
-          <button onclick="vendorController.clearSpecificFilter('${key}')" class="ml-1 text-purple-400 hover:text-purple-200 transition-colors">
-            <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-              <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/>
-            </svg>
-          </button>
-        `;
-        filterContainer.appendChild(badge);
-      }
-    });
-    
-    if (clearBtn) {
-      clearBtn.style.display = hasActiveFilters ? 'inline-block' : 'none';
-    }
-  }
-
-  clearSpecificFilter(filterKey) {
-    const form = document.getElementById('vendor-filters');
-    if (form) {
-      const element = form.querySelector(`[name="${filterKey}"]`);
-      if (element) {
-        element.value = '';
-        this.currentFilters[filterKey] = '';
-        this.refreshVendorList();
-        this.updateActiveFilters();
-        this.loadVendorStats();
-        this.loadVendorPerformance();
-      }
-    }
-  }
-
-  clearAllFilters() {
-    const form = document.getElementById('vendor-filters');
-    if (form) {
-      form.reset();
-      this.currentFilters = { search: '', agency: '', functional_area: '', sort: 'name' };
-      this.refreshVendorList();
-      this.updateActiveFilters();
-      this.loadVendorStats();
-      this.loadVendorPerformance();
-    }
-  }
-
-  async loadVendorStats() {
-    try {
-      const params = new URLSearchParams();
-      Object.entries(this.currentFilters).forEach(([key, value]) => {
-        if (value && value.trim() !== '') params.append(key, value.trim());
-      });
-      
-      const response = await fetch('/api/vendors/stats?' + params.toString());
-      const data = await response.json();
-      
-      if (data.status !== 'error') {
-        document.getElementById('active-vendors-count').textContent = data.active_vendors;
-        document.getElementById('avg-systems-count').textContent = data.avg_components_per_vendor;
-        if (data.top_vendor) {
-          document.getElementById('top-vendor-count').textContent = data.top_vendor.component_count;
-        }
-      }
-    } catch (error) {
-      console.error('Error loading vendor stats:', error);
-    }
-  }
-
-  async loadVendorPerformance() {
-    try {
-      const params = new URLSearchParams();
-      Object.entries(this.currentFilters).forEach(([key, value]) => {
-        if (value && value.trim() !== '') params.append(key, value.trim());
-      });
-      
-      const response = await fetch('/api/vendors/performance?' + params.toString());
-      const data = await response.json();
-      
-      if (data.status !== 'error') {
-        document.getElementById('most-reliable-vendor').textContent = data.most_reliable;
-        document.getElementById('newest-vendor').textContent = data.newest;
-        document.getElementById('largest-vendor').textContent = data.largest;
-      }
-    } catch (error) {
-      console.error('Error loading vendor performance:', error);
-    }
-  }
-
-  showListLoading(show) {
-    const vendorsList = document.getElementById('vendors-list');
-    if (!vendorsList) return;
-    
-    if (show) {
-      vendorsList.style.opacity = '0.6';
-      vendorsList.style.pointerEvents = 'none';
-    } else {
-      vendorsList.style.opacity = '1';
-      vendorsList.style.pointerEvents = 'auto';
-    }
-  }
-
-  updateVendorCount() {
-    const metaElement = document.getElementById('vendor-list-meta');
-    const countDisplay = document.getElementById('vendor-count-display');
-    
-    if (metaElement && countDisplay) {
-      const count = parseInt(metaElement.dataset.count) || 0;
-      countDisplay.textContent = `${count} vendor${count !== 1 ? 's' : ''} found`;
-    }
-  }
-
-  setupPeriodicRefresh() {
-    this.refreshTimers.push(
-      setInterval(() => {
-        const elements = document.querySelectorAll('[hx-get*="/api/count/"]');
-        elements.forEach(el => htmx.trigger(el, 'refresh'));
-      }, 30000)
-    );
-  }
-
-  handleBeforeRequest(event) {
-    if (event.target.id === 'vendors-list') {
-      this.isLoading = true;
-      this.showListLoading(true);
-    }
-  }
-
-  handleAfterRequest(event) {
-    if (event.target.id === 'vendors-list') {
-      this.isLoading = false;
-      this.showListLoading(false);
-    }
-  }
-
-  handleAfterSwap(event) {
-    if (event.target.id === 'vendors-list') {
-      setTimeout(() => this.updateVendorCount(), 100);
-      this.setupVendorCardEffects();
-      if (this.selectedVendorId) {
-        this.highlightSelectedVendor(this.selectedVendorId);
-      }
-    }
-  }
-
-  handleResponseError(event) {
-    if (event.target.id === 'vendors-list') {
-      this.isLoading = false;
-      this.showListLoading(false);
-      showToast('Error loading vendors. Please try again.', false);
-    }
-  }
-
-  setupVendorCardEffects() {
-    const vendorCards = document.querySelectorAll('.vendor-card');
-    vendorCards.forEach(card => {
-      card.addEventListener('mouseenter', function() {
-        this.style.transform = 'translateY(-4px)';
-        this.style.boxShadow = '0 10px 25px rgba(0, 0, 0, 0.3)';
-      });
-      
-      card.addEventListener('mouseleave', function() {
-        if (!this.classList.contains('selected')) {
-          this.style.transform = 'translateY(0)';
-          this.style.boxShadow = 'none';
-        }
-      });
-      
-      card.addEventListener('click', (e) => {
-        if (!e.target.closest('a') && !e.target.closest('button')) {
-          this.selectedVendorId = card.dataset.vendorId;
-          this.highlightSelectedVendor(this.selectedVendorId);
-        }
-      });
-    });
-  }
-
-  highlightSelectedVendor(vendorId) {
-    document.querySelectorAll('.vendor-card').forEach(card => {
-      card.classList.remove('selected');
-      if (!card.matches(':hover')) {
-        card.style.transform = 'translateY(0)';
-        card.style.boxShadow = 'none';
-      }
-    });
-    
-    const selectedCard = document.querySelector(`[data-vendor-id="${vendorId}"]`);
-    if (selectedCard) {
-      selectedCard.classList.add('selected');
-      selectedCard.style.transform = 'translateY(-4px)';
-      selectedCard.style.boxShadow = '0 10px 25px rgba(147, 51, 234, 0.3)';
-    }
-  }
-
-  closeVendorDetails() {
-    this.selectedVendorId = null;
-    document.getElementById('vendor-details').innerHTML = `
-      <div class="glass-effect rounded-xl p-6 border border-slate-700/50 text-center">
-        <div class="w-16 h-16 bg-slate-700 rounded-full flex items-center justify-center mx-auto mb-4">
-          <svg class="w-8 h-8 text-slate-500" fill="currentColor" viewBox="0 0 20 20">
-            <path d="M13 6a3 3 0 11-6 0 3 3 0 016 0zM18 8a2 2 0 11-4 0 2 2 0 014 0zM14 15a4 4 0 00-8 0v3h8v-3z"/>
-          </svg>
-        </div>
-        <h3 class="text-lg font-medium text-slate-400 mb-2">Vendor Details</h3>
-        <p class="text-slate-500 text-sm">Click on a vendor to view detailed information, system portfolio, and contact details.</p>
-      </div>`;
-  }
-}
-
-// =============================================================================
-// GLOBAL FUNCTIONS AND INITIALIZATION
-// =============================================================================
-
-let vendorController;
-
-function clearSpecificFilter(filterKey) {
-  if (vendorController) vendorController.clearSpecificFilter(filterKey);
-}
-
-function clearAllFilters() {
-  if (vendorController) vendorController.clearAllFilters();
-}
-
-function closeVendorDetails() {
-  if (vendorController) vendorController.closeVendorDetails();
-}
-
-// Initialize on DOM ready
-document.addEventListener('DOMContentLoaded', function() {
-  vendorController = new VendorPageController();
-  
-  // Make functions globally available
-  window.clearSpecificFilter = clearSpecificFilter;
-  window.clearAllFilters = clearAllFilters;
-  window.closeVendorDetails = closeVendorDetails;
-  window.vendorController = vendorController;
-});
-
-// Enhanced form handling for vendor operations
-document.body.addEventListener('htmx:afterRequest', function(e) {
-  // Handle vendor form submissions
-  if (e.target.id === 'vendor-form') {
-    try {
-      const response = JSON.parse(e.detail.xhr.response);
-      
-      if (response.status === 'success') {
-        // Trigger custom events for vendor operations
-        if (e.detail.requestConfig.path.includes('POST') && !e.detail.requestConfig.path.match(/\/\d+$/)) {
-          // New vendor created
-          document.dispatchEvent(new CustomEvent('vendor:created', { 
-            detail: { message: response.message } 
-          }));
-        } else if (e.detail.requestConfig.path.includes('POST') && e.detail.requestConfig.path.match(/\/\d+$/)) {
-          // Vendor updated
-          const vendorId = e.detail.requestConfig.path.match(/\/(\d+)$/)[1];
-          document.dispatchEvent(new CustomEvent('vendor:updated', { 
-            detail: { vendorId: vendorId, message: response.message } 
-          }));
-        }
-      }
-    } catch (error) {
-      // Response is not JSON, handle as before
-    }
-  }
-});
-
-// Handle vendor deletion
-document.addEventListener('vendor:deleted', function(e) {
-  if (vendorController) {
-    vendorController.refreshVendorList();
-    vendorController.loadVendorStats();
-    vendorController.loadVendorPerformance();
-    if (e.detail.vendorId === vendorController.selectedVendorId) {
-      vendorController.closeVendorDetails();
-    }
-  }
-});
-
-// Export functionality
-function exportVendorList() {
-  showToast('Export functionality coming soon!', true);
-}
-
-window.exportVendorList = exportVendorList;
-</script>
-{% endblock %}
-# End of app/templates/vendors.html
-
 # Start of app/templates/components.html
 {% extends "base.html" %}
 {% block content %}
@@ -4756,371 +3615,10 @@ setInterval(function() {
 
 # End of app/templates/components.html
 
-# Start of app/templates/functional_areas.html
-<!-- app/templates/functional_areas.html -->
-
-{% extends "base.html" %}
-
-{% block content %}
-<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-  
-  <!-- Page Header -->
-  <div class="mb-8">
-    <h1 class="text-3xl font-bold text-white mb-2">Functional Areas Management</h1>
-    <p class="text-slate-400">Manage global functional areas that organize transit technology functions across all agencies.</p>
-  </div>
-
-  <!-- Actions Bar -->
-  <div class="glass-effect rounded-xl p-6 border border-slate-700/50 mb-6">
-    <div class="flex flex-col lg:flex-row gap-4 items-start lg:items-center justify-between">
-      
-      <!-- Filters -->
-      <div class="flex flex-col sm:flex-row gap-4 flex-1">
-        <!-- Search -->
-        <div class="relative flex-1 max-w-md">
-          <input type="text" id="area-search" placeholder="Search functional areas..." 
-                 class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 text-white placeholder-slate-400 focus:border-blue-500 focus:outline-none"
-                 hx-get="/api/functional-areas/list" hx-target="#functional-areas-list" hx-trigger="keyup changed delay:300ms" 
-                 hx-vals="js:{search: event.target.value}">
-          <svg class="absolute right-3 top-2.5 w-5 h-5 text-slate-400" fill="currentColor" viewBox="0 0 20 20">
-            <path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"/>
-          </svg>
-        </div>
-      </div>
-
-      <!-- Actions -->
-      <div class="flex gap-2">
-        <button hx-get="/api/functional-areas/form" hx-target="#functional-area-form-container" hx-swap="innerHTML"
-                class="px-4 py-2 bg-gradient-to-r from-purple-600 to-blue-600 rounded-lg font-medium hover:from-purple-700 hover:to-blue-700 transition-all">
-          <svg class="w-4 h-4 inline mr-2" fill="currentColor" viewBox="0 0 20 20">
-            <path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd"/>
-          </svg>
-          Add Functional Area
-        </button>
-        <a id="fa-export-btn"
-           href="{{ url_for('main.export_functional_areas_excel') }}"
-           class="px-4 py-2 bg-slate-800 hover:bg-slate-700 rounded-lg font-medium transition-colors"
-           title="Download Excel export">
-          Export
-        </a>
-        <a href="{{ url_for('main.functional_areas_print_page') }}" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 rounded-lg font-medium transition-colors" title="Open print-friendly Functional Areas view">
-          Print Areas
-        </a>
-        <a href="{{ url_for('main.functions_print_page') }}" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 rounded-lg font-medium transition-colors" title="Open print-friendly Functions view grouped by area">
-          Print Functions
-        </a>
-      </div>
-    </div>
-  </div>
-
-  <!-- Inline Form Container -->
-  <div id="functional-area-form-container" class="mb-6"></div>
-
-  <!-- Functional Areas List (Full Width) -->
-  <div class="glass-effect rounded-xl p-6 border border-slate-700/50">
-    <div class="flex items-center justify-between mb-6">
-      <h2 class="text-xl font-semibold text-white">Functional Areas</h2>
-      <button hx-get="/api/functional-areas/list" hx-target="#functional-areas-list" 
-              class="px-3 py-1 bg-slate-800 hover:bg-slate-700 rounded text-sm transition-colors">
-        <svg class="w-4 h-4 inline mr-1" fill="currentColor" viewBox="0 0 20 20">
-          <path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clip-rule="evenodd"/>
-        </svg>
-        Refresh
-      </button>
-    </div>
-    
-    <div id="functional-areas-list" hx-get="/api/functional-areas/list" hx-trigger="load">
-      <!-- Functional areas will be loaded here -->
-      <div class="animate-pulse space-y-4">
-        <div class="h-24 bg-slate-800 rounded-lg"></div>
-        <div class="h-24 bg-slate-800 rounded-lg"></div>
-        <div class="h-24 bg-slate-800 rounded-lg"></div>
-      </div>
-    </div>
-  </div>
-</div>
-{% endblock %}
-
-{% block scripts %}
-<script>
-// Toggle inline details under a functional area card
-function toggleFaDetails(id) {
-  const target = document.getElementById(`fa-details-${id}`);
-  if (!target) return;
-  if (target.innerHTML && target.innerHTML.trim() !== '') {
-    // Collapse
-    target.innerHTML = '';
-  } else {
-    // Expand by fetching details
-    htmx.ajax('GET', `/api/functional-areas/${id}/details`, { target: target, swap: 'innerHTML' });
-  }
-}
-
-// Auto-refresh stats every 30 seconds (kept for future if needed)
-setInterval(function() {
-  const elements = document.querySelectorAll('[hx-get*="/api/count/"]');
-  elements.forEach(el => htmx.trigger(el, 'refresh'));
-}, 30000);
-
-// Success/error handling for forms
-document.body.addEventListener('htmx:afterRequest', function(e) {
-  if (e.detail.xhr.status === 200 && (e.detail.requestConfig.verb === 'post' || e.detail.requestConfig.verb === 'put' || e.detail.requestConfig.verb === 'delete')) {
-    // Refresh list and leave form in place
-    htmx.trigger('#functional-areas-list', 'refresh');
-  }
-});
-
-// Enhance Export link to include current search value as query param
-document.getElementById('fa-export-btn')?.addEventListener('click', function(ev) {
-  const searchEl = document.getElementById('area-search');
-  if (!searchEl) return; // no filter visible
-  const base = this.getAttribute('href') || '/functional-areas/export.xlsx';
-  const qs = new URLSearchParams();
-  if (searchEl.value && searchEl.value.trim() !== '') {
-    qs.set('search', searchEl.value.trim());
-  }
-  // Build final URL (preserve base only if qs is empty)
-  const finalUrl = qs.toString() ? `${base}?${qs.toString()}` : base;
-  this.setAttribute('href', finalUrl);
-});
-</script>
-{% endblock %}
-# End of app/templates/functional_areas.html
-
-# Start of app/templates/agencies.html
-<!-- app/templates/agencies.html -->
-
-{% extends "base.html" %}
-
-{% block content %}
-<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-  
-  <!-- Page Header -->
-  <div class="mb-8">
-    <h1 class="text-3xl font-bold text-white mb-2">Transit Agency Management</h1>
-    <p class="text-slate-400">Manage transit agencies and their organizational structure.</p>
-  </div>
-
-  <!-- Stats Overview -->
-  <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-    <div class="glass-effect rounded-xl p-6 border border-slate-700/50">
-      <div class="flex items-center justify-between mb-2">
-        <div class="w-10 h-10 bg-gradient-to-r from-blue-500 to-blue-600 rounded-lg flex items-center justify-center">
-          <svg class="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 20 20">
-            <path d="M3 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zM3 10a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H4a1 1 0 01-1-1v-6zM14 9a1 1 0 00-1 1v6a1 1 0 001 1h2a1 1 0 001-1v-6a1 1 0 00-1-1h-2z"/>
-          </svg>
-        </div>
-        <span class="text-2xl font-bold text-white" hx-get="/api/count/agencies" hx-trigger="load">--</span>
-      </div>
-      <h3 class="text-slate-400 text-sm font-medium">Total Agencies</h3>
-    </div>
-
-    <div class="glass-effect rounded-xl p-6 border border-slate-700/50">
-      <div class="flex items-center justify-between mb-2">
-        <div class="w-10 h-10 bg-gradient-to-r from-green-500 to-green-600 rounded-lg flex items-center justify-center">
-          <svg class="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 20 20">
-            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
-          </svg>
-        </div>
-        <span class="text-2xl font-bold text-white" id="active-implementations-count">--</span>
-      </div>
-      <h3 class="text-slate-400 text-sm font-medium">Active Implementations</h3>
-    </div>
-
-    <div class="glass-effect rounded-xl p-6 border border-slate-700/50">
-      <div class="flex items-center justify-between mb-2">
-        <div class="w-10 h-10 bg-gradient-to-r from-cyan-500 to-cyan-600 rounded-lg flex items-center justify-center">
-          <svg class="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 20 20">
-            <path fill-rule="evenodd" d="M3 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zM3 10a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H4a1 1 0 01-1-1v-6zM14 9a1 1 0 00-1 1v6a1 1 0 001 1h2a1 1 0 001-1v-6a1 1 0 00-1-1h-2z" clip-rule="evenodd"/>
-          </svg>
-        </div>
-        <span class="text-2xl font-bold text-white" id="avg-implementations-count">--</span>
-      </div>
-      <h3 class="text-slate-400 text-sm font-medium">Avg Tech/Agency</h3>
-    </div>
-
-    <div class="glass-effect rounded-xl p-6 border border-slate-700/50">
-      <div class="flex items-center justify-between mb-2">
-        <div class="w-10 h-10 bg-gradient-to-r from-purple-500 to-purple-600 rounded-lg flex items-center justify-center">
-          <svg class="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 20 20">
-            <path d="M13 6a3 3 0 11-6 0 3 3 0 016 0zM18 8a2 2 0 11-4 0 2 2 0 014 0zM14 15a4 4 0 00-8 0v3h8v-3z"/>
-          </svg>
-        </div>
-        <span class="text-2xl font-bold text-white" id="avg-vendors-count">--</span>
-      </div>
-      <h3 class="text-slate-400 text-sm font-medium">Avg Vendors/Agency</h3>
-    </div>
-  </div>
-
-  <!-- Actions Bar -->
-  <div class="glass-effect rounded-xl p-6 border border-slate-700/50 mb-8">
-    <div class="flex flex-col lg:flex-row gap-4 items-start lg:items-center justify-between">
-      
-      <!-- Search -->
-      <div class="relative flex-1 max-w-md">
-        <input type="text" id="agency-search" placeholder="Search transit agencies..." 
-               class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 text-white placeholder-slate-400 focus:border-blue-500 focus:outline-none"
-               hx-get="/api/agencies/list" hx-target="#agencies-list" hx-trigger="keyup changed delay:300ms" 
-               hx-vals="js:{search: event.target.value}">
-        <svg class="absolute right-3 top-2.5 w-5 h-5 text-slate-400" fill="currentColor" viewBox="0 0 20 20">
-          <path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"/>
-        </svg>
-      </div>
-
-      <!-- Actions -->
-      <div class="flex gap-2">
-        <button hx-get="/api/agencies/form" hx-target="#agency-details" hx-swap="innerHTML"
-                class="px-4 py-2 bg-gradient-to-r from-blue-600 to-cyan-600 rounded-lg font-medium hover:from-blue-700 hover:to-cyan-700 transition-all">
-          <svg class="w-4 h-4 inline mr-2" fill="currentColor" viewBox="0 0 20 20">
-            <path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd"/>
-          </svg>
-          Add Transit Agency
-        </button>
-        <button class="px-4 py-2 bg-slate-800 hover:bg-slate-700 rounded-lg font-medium transition-colors">
-          Export
-        </button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Main Content Area -->
-  <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
-    
-    <!-- Agencies List -->
-    <div class="lg:col-span-2">
-      <div class="glass-effect rounded-xl p-6 border border-slate-700/50">
-        <div class="flex items-center justify-between mb-6">
-          <h2 class="text-xl font-semibold text-white">Transit Agencies</h2>
-          <button hx-get="/api/agencies/list" hx-target="#agencies-list" 
-                  class="px-3 py-1 bg-slate-800 hover:bg-slate-700 rounded text-sm transition-colors">
-            <svg class="w-4 h-4 inline mr-1" fill="currentColor" viewBox="0 0 20 20">
-              <path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clip-rule="evenodd"/>
-            </svg>
-            Refresh
-          </button>
-        </div>
-        
-        <div id="agencies-list" hx-get="/api/agencies/list" hx-trigger="load">
-          <!-- Agencies will be loaded here -->
-          <div class="animate-pulse space-y-4">
-            <div class="h-24 bg-slate-800 rounded-lg"></div>
-            <div class="h-24 bg-slate-800 rounded-lg"></div>
-            <div class="h-24 bg-slate-800 rounded-lg"></div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Details/Form Sidebar -->
-    <div class="space-y-6 sticky top-24 max-h-[calc(100vh-6rem)] overflow-y-auto">
-      
-      <!-- Agency Details Panel -->
-      <div id="agency-details">
-        <!-- Default state -->
-        <div class="glass-effect rounded-xl p-6 border border-slate-700/50 text-center">
-          <div class="w-16 h-16 bg-slate-700 rounded-full flex items-center justify-center mx-auto mb-4">
-            <svg class="w-8 h-8 text-slate-500" fill="currentColor" viewBox="0 0 20 20">
-              <path d="M3 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zM3 10a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H4a1 1 0 01-1-1v-6zM14 9a1 1 0 00-1 1v6a1 1 0 001 1h2a1 1 0 001-1v-6a1 1 0 00-1-1h-2z"/>
-            </svg>
-          </div>
-          <h3 class="text-lg font-medium text-slate-400 mb-2">Agency Details</h3>
-          <p class="text-slate-500 text-sm">Click on a transit agency to view details or use the Add button to create a new one.</p>
-        </div>
-      </div>
-
-      <!-- Agency Insights -->
-      <div class="glass-effect rounded-xl p-6 border border-slate-700/50">
-        <h3 class="text-lg font-semibold text-white mb-4">Transit Insights</h3>
-        <div class="space-y-3">
-          <div class="flex justify-between items-center p-3 bg-slate-800/30 rounded-lg">
-            <span class="text-slate-300 text-sm">Tech Leader</span>
-            <span class="text-blue-400 font-medium text-sm" id="tech-leader-agency">--</span>
-          </div>
-          <div class="flex justify-between items-center p-3 bg-slate-800/30 rounded-lg">
-            <span class="text-slate-300 text-sm">Top Technology</span>
-            <span class="text-green-400 font-medium text-sm" id="common-tech-area">--</span>
-          </div>
-          <div class="flex justify-between items-center p-3 bg-slate-800/30 rounded-lg">
-            <span class="text-slate-300 text-sm">Leading Vendor</span>
-            <span class="text-purple-400 font-medium text-sm" id="top-vendor">--</span>
-          </div>
-        </div>
-      </div>
-
-      <!-- Quick Actions -->
-      <div class="glass-effect rounded-xl p-6 border border-slate-700/50">
-        <h3 class="text-lg font-semibold text-white mb-4">Quick Actions</h3>
-        <div class="space-y-3">
-          <button hx-get="/api/agencies/form" hx-target="#agency-details" hx-swap="innerHTML"
-                  class="w-full px-4 py-3 bg-gradient-to-r from-blue-600 to-cyan-600 rounded-lg text-sm font-medium hover:from-blue-700 hover:to-cyan-700 transition-all text-white shadow-lg">
-            <svg class="w-4 h-4 inline mr-2" fill="currentColor" viewBox="0 0 20 20">
-              <path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd"/>
-            </svg>
-            Add New Agency
-          </button>
-          <button class="w-full px-4 py-3 bg-slate-800 hover:bg-slate-700 rounded-lg text-sm font-medium transition-colors text-white">
-            <svg class="w-4 h-4 inline mr-2" fill="currentColor" viewBox="0 0 20 20">
-              <path d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z"/>
-              <path fill-rule="evenodd" d="M4 5a2 2 0 012-2v1a2 2 0 00-2 2v6a2 2 0 002 2h8a2 2 0 002-2V6a2 2 0 00-2-2V3a2 2 0 012 2v8a4 4 0 01-4 4H6a4 4 0 01-4-4V5z" clip-rule="evenodd"/>
-            </svg>
-            Agency Report
-          </button>
-          <button class="w-full px-4 py-3 bg-slate-800 hover:bg-slate-700 rounded-lg text-sm font-medium transition-colors text-white">
-            <svg class="w-4 h-4 inline mr-2" fill="currentColor" viewBox="0 0 20 20">
-              <path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd"/>
-            </svg>
-            Export Data
-          </button>
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
-{% endblock %}
-
-{% block scripts %}
-<script>
-// Load agency stats
-document.addEventListener('DOMContentLoaded', function() {
-  fetch('/api/agencies/stats')
-    .then(response => response.json())
-    .then(data => {
-      document.getElementById('active-implementations-count').textContent = data.active_implementations;
-      document.getElementById('avg-implementations-count').textContent = data.avg_implementations_per_agency;
-      document.getElementById('avg-vendors-count').textContent = data.avg_vendors_per_agency;
-    });
-
-  // Load agency insights
-  fetch('/api/agencies/insights')
-    .then(response => response.json())
-    .then(data => {
-      document.getElementById('tech-leader-agency').textContent = data.tech_leader;
-      document.getElementById('common-tech-area').textContent = data.common_area;
-      document.getElementById('top-vendor').textContent = data.top_vendor;
-    });
-});
-
-// Auto-refresh stats every 30 seconds
-setInterval(function() {
-  const elements = document.querySelectorAll('[hx-get*="/api/count/"]');
-  elements.forEach(el => htmx.trigger(el, 'refresh'));
-}, 30000);
-
-// Success/error handling for forms
-document.body.addEventListener('htmx:afterRequest', function(e) {
-  if (e.detail.xhr.status === 200 && e.detail.requestConfig.verb === 'post') {
-    // Success: refresh list and show success message
-    htmx.trigger('#agencies-list', 'refresh');
-  }
-});
-</script>
-{% endblock %}
-# End of app/templates/agencies.html
-
 # Start of app/templates/configurations.html
 {% extends 'base.html' %}
 {% block content %}
-<div class="px-6 py-6">
+<div class="px-16 md:px-16 lg:px-24 py-16">
   <div class="flex items-center justify-between mb-4">
     <h1 class="text-2xl font-bold text-white">Configurations</h1>
     <a href="/configurations/import" 
@@ -5161,10 +3659,12 @@ document.body.addEventListener('htmx:afterRequest', function(e) {
       <option value="Draft">Draft</option>
     </select>
   </div>
+  
+  <!-- Configuration List -->
   <div id="config-list" hx-get="/api/configurations/list" hx-trigger="load">
     <div class="text-slate-500 text-sm">Loading...</div>
   </div>
-  <div id="configuration-details" class="mt-4"></div>
+  
   <div class="mt-8">
     <h2 class="text-xl text-white font-semibold mb-2">Quick Create</h2>
     <form hx-post="/api/configurations" hx-target="#config-list" hx-swap="beforebegin" class="space-y-3">

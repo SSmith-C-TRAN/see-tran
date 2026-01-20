@@ -12,9 +12,9 @@ files_to_concatenate = [
     #'app/routes/__init__.py',    # Routes initialization
     'app/routes/main.py',        # Main route handlers
     #'app/routes/vendor.py',      # Vendor routes
-    'app/routes/agency.py',      # Agency routes
+    #'app/routes/agency.py',      # Agency routes
     #'app/routes/standard.py',    # Standards routes
-    'app/routes/integrations.py', # Integration routes
+    #'app/routes/integrations.py', # Integration routes
     #'app/routes/component.py',   # Component routes
     #'app/routes/function.py',    # Function routes
     'app/routes/configurations.py', # Configuration routes
@@ -26,7 +26,7 @@ files_to_concatenate = [
     
     # Forms and Auth
     #'app/forms/__init__.py',     # Forms initialization
-    'app/forms/forms.py',        # Form definitions
+    #'app/forms/forms.py',        # Form definitions
     #'app/auth.py',               # Authentication logic
     
     # Agents
@@ -51,12 +51,12 @@ files_to_concatenate = [
     'app/templates/base.html',    # Base template
     'app/templates/index.html',   # Main page
     #'app/templates/systems.html', # Systems page
-    'app/templates/vendors.html', # Vendors page
+    #'app/templates/vendors.html', # Vendors page
     'app/templates/components.html', # Components page
     #'app/templates/standards.html',  # Standards page
     #'app/templates/integrations.html', # Integrations page
-    'app/templates/functional_areas.html', # Functional areas page
-    'app/templates/agencies.html',   # Agencies page
+    #'app/templates/functional_areas.html', # Functional areas page
+    #'app/templates/agencies.html',   # Agencies page
     #'app/templates/contribute.html', # Contribute page
     'app/templates/configurations.html', # Configurations page
     'app/templates/component_detail.html', # Component detail page
