@@ -1,8 +1,15 @@
 # app/agents/agency_agent.py
 """
 Agency Agent - builds or updates transit agency records using LLM with web search.
+
+Uses a two-step approach:
+1. Research with web search (allows citations, natural language)
+2. Extract structured data (clean JSON output)
 """
 
+import json
+import re
+import time
 from typing import Any
 
 from .base import BaseAgent, AgentResult
@@ -28,26 +35,32 @@ AGENCY_SCHEMA = {
 }
 
 
-SYSTEM_PROMPT = """You are a research assistant gathering information about public transit agencies.
+RESEARCH_SYSTEM_PROMPT = """You are a research assistant gathering information about public transit agencies.
 
-Your task is to search the web for accurate, current information about the specified transit agency, then return structured data.
+Your task is to search the web for accurate, current information about the specified transit agency.
 
 Research priorities:
 1. Official name and common abbreviations
-2. Headquarters location and address  
-3. Current leadership (CEO/General Manager/Executive Director)
-4. Official website and contact information
-5. System description
+2. Headquarters location and full address  
+3. Current leadership (CEO/General Manager/Executive Director) - verify this is current
+4. Official website and contact information (phone, email)
+5. Brief description of the transit system
 
 Prioritize official sources (.gov domains, the agency's own website, official press releases) over third-party sources.
 
-After researching, respond with ONLY a valid JSON object containing the fields you found with high confidence. 
-Do not include fields where you are uncertain. Do not include markdown formatting or explanation.
+Summarize your findings clearly, noting the source for key facts like leadership names."""
+
+
+EXTRACTION_SYSTEM_PROMPT = """You are a data extraction assistant. Your task is to extract structured data from research findings.
+
+CRITICAL: Respond with ONLY a valid JSON object. No markdown code blocks, no explanation, no text before or after the JSON.
+
+Only include fields where the research provides clear, reliable information. Omit fields that are uncertain or not found.
 
 JSON Schema:
 {
   "name": "Official agency name",
-  "short_name": "Acronym like BART or WMATA",
+  "short_name": "Acronym like BART or WMATA", 
   "location": "City, State",
   "description": "Brief 1-2 sentence description",
   "website": "https://...",
@@ -57,9 +70,7 @@ JSON Schema:
   "contact_email": "General contact email",
   "transit_map_link": "URL to system map",
   "email_domain": "domain.org"
-}
-
-Only include fields you found from reliable sources. Omit uncertain fields entirely."""
+}"""
 
 
 class AgencyAgent(BaseAgent):
@@ -71,7 +82,11 @@ class AgencyAgent(BaseAgent):
     
     def execute(self, input_data: dict, existing_record: Any | None = None) -> AgentResult:
         """
-        Execute agency research and data extraction in a single call.
+        Execute agency research and data extraction.
+        
+        Uses a two-step approach:
+        1. Research with web search enabled (natural language response)
+        2. Extract structured JSON from research findings
         
         Args:
             input_data: {'name': 'Agency Name'} - the agency to research
@@ -92,8 +107,17 @@ class AgencyAgent(BaseAgent):
         self._log('decision', {'action': 'start', 'agency_name': agency_name})
         
         try:
-            # Single call: search + structured extraction
-            draft = self._research_and_extract(agency_name)
+            # Step 1: Research with web search
+            research_findings = self._research_agency(agency_name)
+            
+            if not research_findings:
+                return self._create_result(
+                    success=False,
+                    error='Research step returned no findings',
+                )
+            
+            # Step 2: Extract structured data
+            draft = self._extract_structured_data(research_findings)
             
             if '_parse_error' in draft:
                 self._log('error', {
@@ -124,7 +148,7 @@ class AgencyAgent(BaseAgent):
             result = self._create_result(
                 success=True,
                 draft=draft,
-                skipped_fields={},  # No confidence filtering in single-call mode
+                skipped_fields={},
                 diff=diff,
                 is_update=is_update,
             )
@@ -141,38 +165,94 @@ class AgencyAgent(BaseAgent):
                 error=str(e),
             )
     
-    def _research_and_extract(self, agency_name: str) -> dict:
-        """Single LLM call: search the web and return structured data."""
-        import json
+    def _research_agency(self, agency_name: str) -> str:
+        """
+        Step 1: Research the agency using web search.
         
+        Returns natural language findings that may include citations.
+        """
         messages = [
             {
                 'role': 'user',
-                'content': f'Research the public transit agency "{agency_name}" and return the structured JSON data.',
+                'content': f'Research the public transit agency "{agency_name}". Find their official name, current leadership, headquarters address, website, and contact information.',
             }
         ]
         
-        response = self._call_llm(messages, SYSTEM_PROMPT, use_search=True)
+        self._log('decision', {'action': 'research_start', 'agency_name': agency_name})
         
-        # Parse JSON from response
-        content = response.content.strip()
+        response = self._call_llm(messages, RESEARCH_SYSTEM_PROMPT, use_search=True)
         
-        # Clean up potential markdown formatting
-        if content.startswith('```'):
-            lines = content.split('\n')
-            # Remove first line (```json) and last line (```)
-            if lines[-1].strip() == '```':
-                content = '\n'.join(lines[1:-1])
-            else:
-                content = '\n'.join(lines[1:])
+        self._log('decision', {
+            'action': 'research_complete',
+            'response_length': len(response.content),
+        })
         
+        return response.content
+    
+    def _extract_structured_data(self, research_findings: str) -> dict:
+        """
+        Step 2: Extract structured JSON from research findings.
+        
+        Uses a separate LLM call without web search for cleaner output.
+        """
+        time.sleep(0.5)  # Brief pause to ensure separation between calls
+        messages = [
+            {
+                'role': 'user',
+                'content': f'Extract structured agency data from these research findings:\n\n{research_findings}',
+            }
+        ]
+        
+        self._log('decision', {'action': 'extraction_start'})
+        
+        # Use regular completion (no search) for clean JSON output
+        response = self._call_llm(messages, EXTRACTION_SYSTEM_PROMPT, use_search=False)
+        
+        return self._extract_json_from_response(response.content)
+    
+    def _extract_json_from_response(self, content: str) -> dict:
+        """
+        Extract JSON from LLM response, handling various formats.
+        
+        Handles:
+        - Clean JSON
+        - JSON wrapped in markdown code blocks
+        - JSON embedded in other text
+        """
+        content = content.strip()
+        
+        # Try direct parse first (ideal case)
         try:
             return json.loads(content)
-        except json.JSONDecodeError as e:
-            return {
-                '_parse_error': str(e),
-                '_raw_content': content[:500],  # Truncate for logging
-            }
+        except json.JSONDecodeError:
+            pass
+        
+        # Remove markdown code blocks
+        if '```' in content:
+            # Match ```json ... ``` or ``` ... ```
+            match = re.search(r'```(?:json)?\s*([\s\S]*?)```', content)
+            if match:
+                try:
+                    return json.loads(match.group(1).strip())
+                except json.JSONDecodeError:
+                    pass
+        
+        # Find JSON object in the response (between first { and last })
+        start = content.find('{')
+        end = content.rfind('}')
+        if start != -1 and end != -1 and end > start:
+            try:
+                return json.loads(content[start:end + 1])
+            except json.JSONDecodeError as e:
+                return {
+                    '_parse_error': f'Found JSON-like content but failed to parse: {e}',
+                    '_raw_content': content[start:end + 1][:500],
+                }
+        
+        return {
+            '_parse_error': 'Could not find valid JSON in response',
+            '_raw_content': content[:500],
+        }
     
     def _fetch_agency_images(self, draft: dict) -> None:
         """Attempt to fetch logo and header images."""

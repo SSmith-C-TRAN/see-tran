@@ -1,75 +1,68 @@
-<div id="configuration-{{ c.id }}" class="p-4 rounded-xl bg-slate-800/80 border border-slate-700/50 hover:border-slate-600 transition-colors" hx-target="#configuration-details">
-  <div class="cursor-pointer" hx-get="/api/configurations/{{ c.id }}/details">
-    <!-- Header: Agency -->
-    <div class="flex items-center justify-between mb-3">
-      <span class="text-sm font-semibold text-white">{{ c.agency.name if c.agency else ('Agency #' ~ c.agency_id) }}</span>
-      <span class="px-2 py-0.5 text-xs rounded-full {% if c.status == 'Active' %}bg-emerald-600/20 text-emerald-400 border border-emerald-600/30{% elif c.status == 'Planned' %}bg-blue-600/20 text-blue-400 border border-blue-600/30{% elif c.status == 'Retired' %}bg-slate-600/20 text-slate-400 border border-slate-600/30{% else %}bg-amber-600/20 text-amber-400 border border-amber-600/30{% endif %}">{{ c.status }}</span>
-    </div>
-    
-    <!-- Function & Component -->
-    <div class="mb-3">
-      <div class="text-xs text-slate-500 uppercase tracking-wide mb-1">Function</div>
-      <div class="text-sm text-slate-200">
-        <span class="text-slate-400">{{ c.function.functional_area.name if c.function and c.function.functional_area else 'N/A' }} ›</span>
-        {{ c.function.name if c.function else ('Function #' ~ c.function_id) }}
-      </div>
-    </div>
-    
-    <div class="mb-3">
-      <div class="text-xs text-slate-500 uppercase tracking-wide mb-1">Component</div>
-      <div class="text-sm text-slate-200">{{ c.component.name if c.component else ('Component #' ~ c.component_id) }}</div>
-    </div>
-    
-    <!-- Products & Vendors -->
-    {% if c.products %}
-    <div class="mb-3 pt-3 border-t border-slate-700/50">
-      <div class="text-xs text-slate-500 uppercase tracking-wide mb-2">Products</div>
-      <div class="space-y-3">
-        {% for cp in c.products[:3] %}
-        <div class="bg-slate-700/30 rounded-lg p-3">
-          <div class="flex items-start gap-3">
-            {% if cp.product.vendor %}
-            <!-- Vendor Logo -->
-            <div class="flex-shrink-0 w-10 h-10 rounded-lg bg-slate-600/50 flex items-center justify-center overflow-hidden">
-              {% if cp.product.vendor.logo_url %}
-              <img src="{{ cp.product.vendor.logo_url }}" alt="{{ cp.product.vendor.name }}" class="w-full h-full object-contain">
-              {% else %}
-              <span class="text-slate-400 text-xs font-bold">{{ cp.product.vendor.name[:2]|upper }}</span>
-              {% endif %}
-            </div>
-            {% endif %}
-            <div class="flex-1 min-w-0">
-              <!-- Product Name -->
-              <div class="text-sm font-medium text-blue-400">{{ cp.product.name }}</div>
-              <!-- Vendor Name -->
-              {% if cp.product.vendor %}
-              <div class="text-sm text-slate-300 mt-0.5">{{ cp.product.vendor.name }}</div>
-              {% endif %}
-              <!-- Version -->
-              {% if cp.product_version %}
-              <div class="text-xs text-slate-500 mt-1">Version {{ cp.product_version.version }}</div>
-              {% endif %}
-            </div>
-          </div>
-        </div>
-        {% endfor %}
-        {% if c.products|length > 3 %}
-        <div class="text-xs text-slate-500 pl-3">+{{ c.products|length - 3 }} more products</div>
-        {% endif %}
-      </div>
-    </div>
-    {% endif %}
-    
-    {% if c.version_label %}
-    <div class="text-xs text-slate-500 mb-2">Version: {{ c.version_label }}</div>
-    {% endif %}
+<a href="/configurations/{{ c.id }}" id="configuration-{{ c.id }}" class="block p-4 rounded-xl bg-slate-800/80 border border-slate-700/50 hover:border-blue-500/50 hover:bg-slate-700/50 transition-colors">
+  <!-- Header: Agency -->
+  <div class="flex items-center justify-between mb-3">
+    <span class="text-sm font-semibold text-white">{{ c.agency.name if c.agency else ('Agency #' ~ c.agency_id) }}</span>
+    <span class="px-2 py-0.5 text-xs rounded-full {% if c.status == 'Active' %}bg-emerald-600/20 text-emerald-400 border border-emerald-600/30{% elif c.status == 'Planned' %}bg-blue-600/20 text-blue-400 border border-blue-600/30{% elif c.status == 'Retired' %}bg-slate-600/20 text-slate-400 border border-slate-600/30{% else %}bg-amber-600/20 text-amber-400 border border-amber-600/30{% endif %}">{{ c.status }}</span>
   </div>
   
-  <!-- Actions -->
-  <div class="flex justify-end gap-2 pt-3 border-t border-slate-700/50">
-    <button class="text-xs px-3 py-1.5 bg-slate-700 hover:bg-slate-600 rounded-lg transition-colors" hx-get="/api/configurations/{{ c.id }}/form" hx-target="#configuration-{{ c.id }}" hx-swap="outerHTML">Edit</button>
-    <button class="text-xs px-3 py-1.5 bg-red-900/30 hover:bg-red-900/50 text-red-400 rounded-lg transition-colors" hx-delete="/api/configurations/{{ c.id }}" hx-target="#configuration-{{ c.id }}" hx-swap="outerHTML" hx-confirm="Delete this configuration?">Delete</button>
+  <!-- Function & Component -->
+  <div class="mb-3">
+    <div class="text-xs text-slate-500 uppercase tracking-wide mb-1">Function</div>
+    <div class="text-sm text-slate-200">
+      <span class="text-slate-400">{{ c.function.functional_area.name if c.function and c.function.functional_area else 'N/A' }} ›</span>
+      {{ c.function.name if c.function else ('Function #' ~ c.function_id) }}
+    </div>
   </div>
-</div>
+  
+  <div class="mb-3">
+    <div class="text-xs text-slate-500 uppercase tracking-wide mb-1">Component</div>
+    <div class="text-sm text-slate-200">{{ c.component.name if c.component else ('Component #' ~ c.component_id) }}</div>
+  </div>
+  
+  <!-- Products & Vendors -->
+  {% if c.products %}
+  <div class="pt-3 border-t border-slate-700/50">
+    <div class="text-xs text-slate-500 uppercase tracking-wide mb-2">Products</div>
+    <div class="space-y-3">
+      {% for cp in c.products[:2] %}
+      <div class="bg-slate-700/30 rounded-lg p-3">
+        <div class="flex items-start gap-3">
+          {% if cp.product.vendor %}
+          <!-- Vendor Logo -->
+          <div class="flex-shrink-0 w-10 h-10 rounded-lg bg-slate-600/50 flex items-center justify-center overflow-hidden">
+            {% if cp.product.vendor.logo_url %}
+            <img src="{{ cp.product.vendor.logo_url }}" alt="{{ cp.product.vendor.name }}" class="w-full h-full object-contain">
+            {% else %}
+            <span class="text-slate-400 text-xs font-bold">{{ cp.product.vendor.name[:2]|upper }}</span>
+            {% endif %}
+          </div>
+          {% endif %}
+          <div class="flex-1 min-w-0">
+            <!-- Product Name -->
+            <div class="text-sm font-medium text-blue-400">{{ cp.product.name }}</div>
+            <!-- Vendor Name -->
+            {% if cp.product.vendor %}
+            <div class="text-sm text-slate-300 mt-0.5">{{ cp.product.vendor.name }}</div>
+            {% endif %}
+            <!-- Version -->
+            {% if cp.product_version %}
+            <div class="text-xs text-slate-500 mt-1">Version {{ cp.product_version.version }}</div>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+      {% if c.products|length > 2 %}
+      <div class="text-xs text-slate-500 text-center">+{{ c.products|length - 2 }} more</div>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+  
+  {% if c.version_label %}
+  <div class="text-xs text-slate-500 mt-2">Version: {{ c.version_label }}</div>
+  {% endif %}
+</a>
+
 
 

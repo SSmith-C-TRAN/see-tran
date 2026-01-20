@@ -2,6 +2,7 @@
 """Anthropic Claude provider implementation."""
 
 import json
+import time
 import httpx
 from . import LLMProvider, LLMResponse
 
@@ -11,6 +12,7 @@ class AnthropicProvider(LLMProvider):
     
     DEFAULT_MODEL = 'claude-sonnet-4-20250514'
     API_URL = 'https://api.anthropic.com/v1/messages'
+    MAX_RETRIES = 3
     
     def __init__(self, api_key: str):
         if not api_key:
@@ -29,7 +31,7 @@ class AnthropicProvider(LLMProvider):
         tools: list[dict] | None = None,
         max_tokens: int = 4096,
     ) -> dict:
-        """Make a request to the Anthropic API."""
+        """Make a request to the Anthropic API with retry on rate limits."""
         headers = {
             'Content-Type': 'application/json',
             'x-api-key': self.api_key,
@@ -46,10 +48,20 @@ class AnthropicProvider(LLMProvider):
         if tools:
             payload['tools'] = tools
         
-        with httpx.Client(timeout=120.0) as client:
-            response = client.post(self.API_URL, headers=headers, json=payload)
-            response.raise_for_status()
-            return response.json()
+        for attempt in range(self.MAX_RETRIES):
+            with httpx.Client(timeout=120.0) as client:
+                response = client.post(self.API_URL, headers=headers, json=payload)
+                
+                if response.status_code == 429:
+                    if attempt < self.MAX_RETRIES - 1:
+                        delay = 2 * (2 ** attempt)  # 2s, 4s, 8s
+                        time.sleep(delay)
+                        continue
+                
+                response.raise_for_status()
+                return response.json()
+        
+        raise Exception("Max retries exceeded")
     
     def _extract_text(self, response: dict) -> str:
         """Extract text content from response."""

@@ -71,6 +71,20 @@ def agency_configurations_page(agency_id):
     functions = Function.query.order_by(Function.name.asc()).all()
     return render_template('configurations.html', agency=agency, agencies=agencies, functions=functions, selected_agency_id=agency.id)
 
+@config_bp.route('/configurations/<int:config_id>')
+@login_required
+def configuration_detail_page(config_id):
+    """Dedicated detail page for a configuration."""
+    c = Configuration.query.options(
+        joinedload(Configuration.agency),
+        joinedload(Configuration.function).joinedload(Function.functional_area),
+        joinedload(Configuration.component),
+        joinedload(Configuration.products).joinedload(ConfigurationProduct.product).joinedload(Product.vendor),
+        joinedload(Configuration.products).joinedload(ConfigurationProduct.product_version)
+    ).get_or_404(config_id)
+    warnings = advisory_validate(c, [cp.product for cp in c.products])
+    return render_template('configuration_detail.html', c=c, warnings=warnings)
+
 # --------- Configuration API ---------
 
 @config_bp.route('/api/configurations/list')

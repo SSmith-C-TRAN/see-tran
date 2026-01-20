@@ -1,6 +1,6 @@
 {% extends 'base.html' %}
 {% block content %}
-<div class="px-6 py-6">
+<div class="px-16 md:px-16 lg:px-24 py-16">
   <div class="flex items-center justify-between mb-4">
     <h1 class="text-2xl font-bold text-white">Configurations</h1>
     <a href="/configurations/import" 
@@ -41,10 +41,12 @@
       <option value="Draft">Draft</option>
     </select>
   </div>
+  
+  <!-- Configuration List -->
   <div id="config-list" hx-get="/api/configurations/list" hx-trigger="load">
     <div class="text-slate-500 text-sm">Loading...</div>
   </div>
-  <div id="configuration-details" class="mt-4"></div>
+  
   <div class="mt-8">
     <h2 class="text-xl text-white font-semibold mb-2">Quick Create</h2>
     <form hx-post="/api/configurations" hx-target="#config-list" hx-swap="beforebegin" class="space-y-3">

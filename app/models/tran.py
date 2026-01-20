@@ -79,6 +79,9 @@ class Agency(db.Model):
     )
 
     configurations = db.relationship('Configuration', back_populates='agency', cascade='all, delete-orphan')
+
+    users = db.relationship('User', back_populates='agency', cascade='all, delete-orphan')
+    verified_domains = db.relationship('VerifiedAgencyDomain', back_populates='agency', cascade='all, delete-orphan')
     
     def __repr__(self):
         return f"<Agency(name={self.name}, location={self.location})>"
@@ -252,6 +255,56 @@ class Tag(db.Model):
 
     def __repr__(self):
         return f"<Tag(name={self.name})>"
+
+
+class User(db.Model):
+    """Authenticated application user (backed by OAuth identity)."""
+
+    __tablename__ = 'users'
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    provider = db.Column(db.String(50), nullable=False)  # e.g. 'google', 'microsoft'
+    sub = db.Column(db.String(255), nullable=False)      # provider subject / stable external id
+
+    email = db.Column(db.String(255), nullable=False, unique=True, index=True)
+    name = db.Column(db.String(255))
+
+    agency_id = db.Column(db.Integer, db.ForeignKey('agencies.id'), nullable=True, index=True)
+    agency = db.relationship('Agency', back_populates='users')
+
+    is_admin = db.Column(db.Boolean, default=False, nullable=False)
+    is_active = db.Column(db.Boolean, default=True, nullable=False)
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    last_login_at = db.Column(db.DateTime)
+
+    __table_args__ = (
+        db.UniqueConstraint('provider', 'sub', name='uq_user_provider_sub'),
+        db.Index('ix_user_provider_sub', 'provider', 'sub'),
+    )
+
+    def __repr__(self):
+        return f"<User(email={self.email}, provider={self.provider})>"
+
+
+class VerifiedAgencyDomain(db.Model):
+    """Maps an email domain to an Agency for auto-association and access control."""
+
+    __tablename__ = 'verified_agency_domains'
+
+    id = db.Column(db.Integer, primary_key=True)
+    domain = db.Column(db.String(255), nullable=False, unique=True, index=True)
+
+    agency_id = db.Column(db.Integer, db.ForeignKey('agencies.id'), nullable=False, index=True)
+    agency = db.relationship('Agency', back_populates='verified_domains')
+
+    verified_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    verified_by_user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    verified_by = db.relationship('User', foreign_keys=[verified_by_user_id])
+
+    def __repr__(self):
+        return f"<VerifiedAgencyDomain(domain={self.domain}, agency_id={self.agency_id})>"
     
 class UserRole(db.Model):
     __tablename__ = 'user_roles'
