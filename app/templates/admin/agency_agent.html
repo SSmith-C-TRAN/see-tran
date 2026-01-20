@@ -2,7 +2,7 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
   
   <!-- Page Header -->
   <div class="mb-8">
@@ -214,8 +214,10 @@ async function runAgent(payload) {
     
     if (result.success) {
       showSuccess(result);
+      showToast('Research complete! Review the proposed data below.', true);
     } else {
       showError(result.error || 'Agent execution failed');
+      showToast(result.error || 'Agent execution failed', false);
     }
     
   } catch (err) {

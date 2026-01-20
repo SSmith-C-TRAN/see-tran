@@ -1,5 +1,7 @@
+<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
 {% for c in configurations %}
   {% include 'fragments/configuration_row.html' %}
 {% else %}
-  <div class="text-slate-500 text-sm">No configurations found.</div>
+  <div class="text-slate-500 text-sm col-span-2">No configurations found.</div>
 {% endfor %}
+</div>

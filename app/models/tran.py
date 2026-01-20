@@ -89,9 +89,9 @@ class Agency(db.Model):
         from flask import url_for, current_app
         if self.short_name:
             filename = f"{self.short_name.lower().replace(' ', '_')}_logo.png"
-            full_path = os.path.join(current_app.static_folder, 'images', 'agency_logos', filename)
+            full_path = os.path.join(current_app.static_folder, 'images', 'transit_logos', filename)
             if os.path.exists(full_path):
-                return url_for('static', filename=f'images/agency_logos/{filename}')
+                return url_for('static', filename=f'images/transit_logos/{filename}')
         return None
     
     @property
@@ -100,9 +100,9 @@ class Agency(db.Model):
         from flask import url_for, current_app
         if self.short_name:
             filename = f"{self.short_name.lower().replace(' ', '_')}_header.png"
-            full_path = os.path.join(current_app.static_folder, 'images', 'agency_headers', filename)
+            full_path = os.path.join(current_app.static_folder, 'images', 'transit_headers', filename)
             if os.path.exists(full_path):
-                return url_for('static', filename=f'images/agency_headers/{filename}')
+                return url_for('static', filename=f'images/transit_headers/{filename}')
         return None
 
 class FunctionalArea(db.Model):
