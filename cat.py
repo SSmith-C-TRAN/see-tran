@@ -10,14 +10,15 @@ files_to_concatenate = [
     
     # Routes and Views
     #'app/routes/__init__.py',    # Routes initialization
-    'app/routes/main.py',        # Main route handlers
+    #'app/routes/main.py',        # Main route handlers
     #'app/routes/vendor.py',      # Vendor routes
-    #'app/routes/agency.py',      # Agency routes
+    'app/routes/agency.py',      # Agency routes
+    'app/routes/admin.py', 
     #'app/routes/standard.py',    # Standards routes
     #'app/routes/integrations.py', # Integration routes
     #'app/routes/component.py',   # Component routes
     #'app/routes/function.py',    # Function routes
-    'app/routes/configurations.py', # Configuration routes
+    #'app/routes/configurations.py', # Configuration routes
     
     # Models and Data
     #'app/models/__init__.py',    # Models initialization
@@ -33,18 +34,18 @@ files_to_concatenate = [
     'app/agents/__init__.py',    # Agents initialization
     'app/agents/agency_agent.py',# Agency business logic
     #'app/agents/component_agent.py', # Component business logic
+    'app/agents/providers/anthropic.py', # Anthropic LLM provider
     
     # Utils
     #'app/utils/__init__.py',     # Utils initialization
     #'app/utils/errors.py',       # Error handling
-    #'app/utils/logging.py',      # Standard logging functions
+    'app/utils/logging.py',      # Standard logging functions
     
     # Frontend Assets
     #'tailwind/input.css',        # Tailwind source CSS
     #'tailwind.config.js',        # Tailwind configuration
     #'postcss.config.js',         # PostCSS configuration
-    #'app/static/css/style.css',  # Custom styles
-    #'app/static/js/main.js',     # Main JavaScript file
+    'app/static/js/main.js',     # Main JavaScript file
     #'app/static/js/htmx.min.js',   # Vendor JavaScript file
     
     # Templates
@@ -52,25 +53,55 @@ files_to_concatenate = [
     'app/templates/index.html',   # Main page
     #'app/templates/systems.html', # Systems page
     #'app/templates/vendors.html', # Vendors page
-    'app/templates/components.html', # Components page
+    #'app/templates/components.html', # Components page
     #'app/templates/standards.html',  # Standards page
     #'app/templates/integrations.html', # Integrations page
     #'app/templates/functional_areas.html', # Functional areas page
     #'app/templates/agencies.html',   # Agencies page
     #'app/templates/contribute.html', # Contribute page
-    'app/templates/configurations.html', # Configurations page
-    'app/templates/component_detail.html', # Component detail page
+    #'app/templates/configurations.html', # Configurations page
+    #'app/templates/component_detail.html', # Component detail page
     
     # Template Fragments
-    #'app/templates/fragments/vendor_details.html',
-    #'app/templates/fragments/vendor_form.html',
-    #'app/templates/fragments/vendor_list.html',
-    #'app/templates/fragments/agency_details.html',
-    #'app/templates/fragments/agency_list.html',
-    #'app/templates/fragments/agency_form.html',
+    'app/templates/fragments/agency_details.html',
+    'app/templates/fragments/agency_form.html',
+    'app/templates/fragments/agency_list.html',
+    #'app/templates/fragments/afi_edit_form.html',
+    #'app/templates/fragments/afi_history.html',
+    #'app/templates/fragments/afi_list.html',
+    #'app/templates/fragments/afi_row.html',
+    #'app/templates/fragments/component_form.html',
+    #'app/templates/fragments/component_list.html',
+    #'app/templates/fragments/configuration_details.html',
+    #'app/templates/fragments/configuration_edit_form.html',
+    #'app/templates/fragments/configuration_history.html',
+    #'app/templates/fragments/configuration_list.html',
+    #'app/templates/fragments/configuration_product_form.html',
+    #'app/templates/fragments/configuration_products_list.html',
+    #'app/templates/fragments/configuration_row.html',
     #'app/templates/fragments/functional_area_details.html',
     #'app/templates/fragments/functional_area_form.html',
     #'app/templates/fragments/functional_area_list.html',
+    #'app/templates/fragments/product_details.html',
+    #'app/templates/fragments/product_form.html',
+    #'app/templates/fragments/product_list.html',
+    #'app/templates/fragments/product_picker_options.html',
+    #'app/templates/fragments/product_version_form.html',
+    #'app/templates/fragments/product_versions_list.html',
+    #'app/templates/fragments/vendor_details.html',
+    #'app/templates/fragments/vendor_form.html',
+    #'app/templates/fragments/vendor_list.html',
+    #'app/templates/fragments/wizard_afi_step1.html',
+    #'app/templates/fragments/wizard_afi_step2_components.html',
+    #'app/templates/fragments/wizard_afi_step3_details.html',
+    #'app/templates/fragments/wizard_afi_step4_review.html',
+    #'app/templates/fragments/wizard_config_step1.html',
+    #'app/templates/fragments/wizard_config_step2.html',
+    #'app/templates/fragments/wizard_config_step3.html',
+    #'app/templates/fragments/wizard_config_step4.html',
+
+    'app/templates/admin/agency_agent.html',
+    'app/templates/admin/dashboard.html',
     
     # Scripts
     #'scripts/load_functional_areas.py',
@@ -87,12 +118,12 @@ files_to_concatenate = [
     #'tests/test_phase2_functional_areas.py',
     
     # Documentation
-    #'prompts/Technical_Design.md',
+    'docs/README_agents.md',
     #'prompts/Data_Model.md',
     #'prompts/Vendors.md',
     #'prompts/More_Vendors.md',
     #'prompts/Full_Vendors.md',
-    'README.md',
+    #'README.md',
 
     # Data
     #'data/ctran/agency.csv',

@@ -10,7 +10,7 @@ from . import LLMProvider, LLMResponse
 class AnthropicProvider(LLMProvider):
     """Anthropic Claude API provider."""
     
-    DEFAULT_MODEL = 'claude-sonnet-4-20250514'
+    DEFAULT_MODEL = 'claude-haiku-4-5'
     API_URL = 'https://api.anthropic.com/v1/messages'
     MAX_RETRIES = 3
     
@@ -101,7 +101,7 @@ class AnthropicProvider(LLMProvider):
             {
                 'type': 'web_search_20250305',
                 'name': 'web_search',
-                'max_uses': 5,
+                'max_uses': 3,
             }
         ]
         
@@ -129,7 +129,7 @@ class AnthropicProvider(LLMProvider):
 IMPORTANT: You must respond with ONLY valid JSON matching this schema:
 {json.dumps(schema, indent=2)}
 
-Do not include any text before or after the JSON. Do not use markdown code blocks."""
+Do not include any text before or after the JSON. Do not use markdown code blocks. Remove any extraneous text."""
         
         response = self._make_request(messages, json_system, model)
         content = self._extract_text(response)

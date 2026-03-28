@@ -48,6 +48,14 @@ class Criticality(enum.Enum):
     medium = "medium"
     low = "low"
 
+class Fleet(enum.Enum):
+    fixed = "Fixed Route"
+    vine = "The Vine"
+    para = "Paratransit"
+    current = "The Current"
+    facilities = "Facilities"
+    security = "Security"
+
 class LifecycleStage(enum.Enum):
     planned = "planned"          # Identified / slated for adoption
     pilot = "pilot"              # Limited trial

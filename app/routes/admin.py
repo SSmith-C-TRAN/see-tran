@@ -35,41 +35,58 @@ def agency_agent_page():
 @admin_bp.route('/api/agents/agency/run', methods=['POST'])
 @login_required
 def run_agency_agent():
-    """
-    Execute the agency agent.
-    
-    Request body:
-        - name: Agency name to research (required for new)
-        - agency_id: Existing agency ID (optional, for updates)
-    
-    Returns:
-        AgentResult as JSON
-    """
+    """Execute the agency agent."""
     data = request.get_json() or {}
     
     agency_name = data.get('name', '').strip()
     agency_id = data.get('agency_id')
     
-    # Get existing record if updating
     existing_record = None
     if agency_id:
         existing_record = Agency.query.get(agency_id)
         if not existing_record:
             return jsonify({'success': False, 'error': 'Agency not found'}), 404
-        # Use existing name if not provided
         if not agency_name:
             agency_name = existing_record.name
     
     if not agency_name:
         return jsonify({'success': False, 'error': 'Agency name is required'}), 400
     
-    # Execute the agent
     result = agency_agent.execute(
         input_data={'name': agency_name},
         existing_record=existing_record,
     )
     
-    return jsonify(result.to_dict())
+    # Convert to dict and sanitize for JSON serialization
+    response_dict = result.to_dict()
+    
+    # Sanitize logs - truncate large entries and remove non-serializable content
+    if 'logs' in response_dict:
+        sanitized_logs = []
+        for log in response_dict.get('logs', []):
+            sanitized_log = {
+                'event_type': log.get('event_type', ''),
+                'timestamp': log.get('timestamp', ''),
+            }
+            # Truncate details to avoid huge payloads
+            details = log.get('details', {})
+            if isinstance(details, dict):
+                sanitized_details = {}
+                for k, v in details.items():
+                    if isinstance(v, str) and len(v) > 200:
+                        sanitized_details[k] = v[:200] + '...'
+                    elif k not in ('raw_response', '_raw_content'):  # Skip large fields
+                        sanitized_details[k] = v
+                sanitized_log['details'] = sanitized_details
+            sanitized_logs.append(sanitized_log)
+        response_dict['logs'] = sanitized_logs
+    
+    # Remove raw_response from draft if present (can contain circular refs)
+    if response_dict.get('draft'):
+        response_dict['draft'].pop('_raw_content', None)
+        response_dict['draft'].pop('raw_response', None)
+    
+    return jsonify(response_dict)
 
 
 @admin_bp.route('/api/agents/agency/commit', methods=['POST'])

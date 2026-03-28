@@ -12,22 +12,13 @@ from .base import BaseAgent, AgentResult
 
 SYSTEM_PROMPT = """You are a research assistant gathering information about public transit agencies.
 
-Your task is to:
-1. Search the web for accurate, current information about the specified transit agency
-2. Return the findings as a JSON object with no other text or formatting
+SEARCH STRATEGY:
+- Search for "[agency name] official website" first
+- Search for "[agency name] leadership CEO general manager" 
+- Search for "[agency name] contact headquarters address"
 
-Research priorities:
-1. Official name and common abbreviations
-2. Headquarters location and full address  
-3. Current leadership (CEO/General Manager/Executive Director) - verify this is current
-4. Official website and contact information (phone, email)
-5. Brief description of the transit system
-
-Prioritize official sources (.gov domains, the agency's own website, official press releases).
-
-CRITICAL: After researching, respond with ONLY a valid JSON object. No markdown, no explanation.
-
-Only include fields where you found clear, reliable information. Omit uncertain fields.
+Keep searches focused. Return ONLY a JSON object with verified facts.
+Omit fields where information is uncertain.
 
 {
   "name": "Official agency name",
@@ -41,6 +32,8 @@ Only include fields where you found clear, reliable information. Omit uncertain 
   "contact_email": "General contact email",
   "transit_map_link": "URL to system map",
   "email_domain": "domain.org"
+  "ridership": "Approximate annual ridership (if available)"
+  "vehicles": "Approximate number of vehicles in fleet (if available)"
 }"""
 
 
@@ -174,33 +167,10 @@ class AgencyAgent(BaseAgent):
         }
     
     def _fetch_agency_images(self, draft: dict) -> None:
-        """Attempt to fetch logo and header images."""
-        website = draft.get('website')
-        short_name = draft.get('short_name') or draft.get('name', 'agency')
-        
-        logo_result = self._call_tool('image_fetch', {
-            'entity_type': 'agency',
-            'entity_name': draft.get('name', ''),
-            'short_name': short_name,
-            'website_url': website,
-            'image_type': 'logo',
-        })
-        
-        if logo_result.success:
-            draft['_logo_fetched'] = True
-            draft['_logo_path'] = logo_result.data.get('filepath')
-        
-        header_result = self._call_tool('image_fetch', {
-            'entity_type': 'agency',
-            'entity_name': draft.get('name', ''),
-            'short_name': short_name,
-            'website_url': website,
-            'image_type': 'header',
-        })
-        
-        if header_result.success:
-            draft['_header_fetched'] = True
-            draft['_header_path'] = header_result.data.get('filepath')
+        """Attempt to fetch logo and header images if tool is available."""
+        # TODO: Re-enable when image_fetch tool is properly registered
+        self._log('info', {'action': 'skip_images', 'reason': 'image_fetch disabled'})
+        return
     
     def _record_to_dict(self, record) -> dict:
         """Convert an Agency model instance to a dict for comparison."""
