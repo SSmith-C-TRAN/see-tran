@@ -201,9 +201,10 @@ async function runAgent(payload) {
       body: JSON.stringify(payload),
     });
     
-    const result = await response.json();
+    const envelope = await response.json();
+    const result = envelope.data || {};
     currentResult = result;
-    
+
     // Log execution details
     if (result.logs) {
       result.logs.forEach(log => {
@@ -211,13 +212,14 @@ async function runAgent(payload) {
         logMessage(msg, log.event_type === 'error' ? 'error' : 'info');
       });
     }
-    
-    if (result.success) {
+
+    if (envelope.ok && result.success) {
       showSuccess(result);
       showToast('Research complete! Review the proposed data below.', true);
     } else {
-      showError(result.error || 'Agent execution failed');
-      showToast(result.error || 'Agent execution failed', false);
+      const errMsg = result.error || envelope.error || 'Agent execution failed';
+      showError(errMsg);
+      showToast(errMsg, false);
     }
     
   } catch (err) {
@@ -249,9 +251,9 @@ applyBtn.addEventListener('click', async () => {
     });
     
     const result = await response.json();
-    
-    if (result.success) {
-      showToast(result.message, true);
+
+    if (result.ok) {
+      showToast((result.data && result.data.message) || 'Changes applied successfully', true);
       clearResults();
       // Refresh the agency list
       location.reload();

@@ -10,7 +10,8 @@ from app.models.tran import (
 from app.forms.forms import AgencyForm, VendorForm, ComponentForm
 from app.auth import login_required, get_updated_by
 from app.utils.errors import (
-    json_error_response, json_success_response, 
+    api_ok,
+    json_error_response, json_success_response,
     html_error_fragment, html_success_fragment,
     json_form_error_response, json_validation_error_response
 )
@@ -305,8 +306,8 @@ def health_check():
     try:
         # Test database connection
         db.session.execute(db.text('SELECT 1'))
-        return jsonify({
-            "status": "ok", 
+        return api_ok({
+            "status": "ok",
             "timestamp": datetime.utcnow().isoformat(),
             "database": "connected"
         })
@@ -675,7 +676,7 @@ def component_create():
             form.populate_component(c)
             db.session.add(c)
             db.session.commit()
-            return json_success_response(f"Component '{c.name}' created", data={"id": c.id})
+            return api_ok({"id": c.id, "message": f"Component '{c.name}' created"})
         except IntegrityError as ie:
             db.session.rollback()
             return json_error_response(f"Error creating component: {str(ie)}")
@@ -693,7 +694,7 @@ def component_update(component_id):
         try:
             form.populate_component(component)
             db.session.commit()
-            return json_success_response(f"Component '{component.name}' updated", data={"id": component.id})
+            return api_ok({"id": component.id, "message": f"Component '{component.name}' updated"})
         except Exception as e:
             db.session.rollback()
             return json_error_response(f"Error updating component: {str(e)}")
@@ -710,7 +711,7 @@ def component_delete(component_id):
             return json_error_response("Cannot delete component – it is referenced by one or more configurations.")
         db.session.delete(component)
         db.session.commit()
-        return json_success_response("Component deleted successfully")
+        return api_ok({"message": "Component deleted successfully"})
     except Exception as e:
         db.session.rollback()
         return json_error_response(f"Error deleting component: {str(e)}")
@@ -865,7 +866,7 @@ def delete_vendor(vendor_id):
             )
         db.session.delete(vendor)
         db.session.commit()
-        return json_success_response(f"Vendor '{name}' deleted successfully")
+        return api_ok({"message": f"Vendor '{name}' deleted successfully"})
     except Exception as e:
         db.session.rollback()
         return json_error_response(f"Error deleting vendor: {str(e)}")
@@ -898,7 +899,7 @@ def vendors_stats():
             'most_used_vendor': most_used.name if most_used else 'N/A',
             'most_used_vendor_cfgs': most_used.cfg_use if most_used else 0
         }
-        return jsonify(stats)
+        return api_ok(stats)
     except Exception as e:
         return json_error_response(f"Error getting vendor stats: {str(e)}")
 
@@ -932,7 +933,7 @@ def vendor_performance():
          .group_by(Vendor.id, Vendor.name) \
          .order_by(func.count(func.distinct(Configuration.id)).desc()) \
          .first()
-        return jsonify({
+        return api_ok({
             'most_versions': most_versions.name if most_versions else 'N/A',
             'most_versions_count': most_versions.ver_count if most_versions else 0,
             'most_recent_release_vendor': recent_release.name if recent_release else 'N/A',
@@ -984,7 +985,7 @@ def agencies_stats():
          .join(Vendor, Vendor.id == Product.vendor_id) \
          .group_by(Configuration.agency_id).all()
         avg_vendors = round(sum(r.v_count for r in vendor_counts_rows) / len(vendor_counts_rows), 1) if vendor_counts_rows else 0
-        return jsonify({
+        return api_ok({
             'active_implementations': active_cfgs,
             'avg_implementations_per_agency': avg_impl,
             'avg_vendors_per_agency': avg_vendors
@@ -1011,7 +1012,7 @@ def agencies_insights():
          .join(ConfigurationProduct, ConfigurationProduct.product_id == Product.id) \
          .join(Configuration, Configuration.id == ConfigurationProduct.configuration_id) \
          .group_by(Vendor.id).order_by(func.count(func.distinct(Configuration.id)).desc()).first()
-        return jsonify({
+        return api_ok({
             'tech_leader': tech_leader.name if tech_leader else 'N/A',
             'common_area': common_area.name if common_area else 'N/A',
             'top_vendor': top_vendor.name if top_vendor else 'N/A'
@@ -1076,7 +1077,7 @@ def create_vendor():
             form.populate_vendor(vendor)
             db.session.add(vendor)
             db.session.commit()
-            return json_success_response(f"Vendor '{vendor.name}' created", data={"id": vendor.id})
+            return api_ok({"id": vendor.id, "message": f"Vendor '{vendor.name}' created"})
         except IntegrityError as ie:
             db.session.rollback()
             return json_validation_error_response("Duplicate vendor", {"name": "A vendor with this name already exists."})
@@ -1096,7 +1097,7 @@ def update_vendor(vendor_id):
         try:
             form.populate_vendor(vendor)
             db.session.commit()
-            return json_success_response(f"Vendor '{vendor.name}' updated", data={"id": vendor.id})
+            return api_ok({"id": vendor.id, "message": f"Vendor '{vendor.name}' updated"})
         except IntegrityError:
             db.session.rollback()
             return json_validation_error_response("Duplicate vendor", {"name": "A vendor with this name already exists."})

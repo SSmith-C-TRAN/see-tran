@@ -273,13 +273,13 @@ function deleteVendor(vendorId) {
   })
   .then(response => response.json())
   .then(data => {
-    if (data.status === 'success') {
-      showToast(data.message, true);
+    if (data.ok) {
+      showToast((data.data && data.data.message) || 'Vendor deleted', true);
       closeVendorForm();
       // Refresh vendor list
       htmx.trigger('#vendors-list', 'refresh');
     } else {
-      showToast(data.message, false);
+      showToast(data.error || 'Failed to delete vendor', false);
     }
   })
   .catch(error => {
@@ -319,20 +319,18 @@ document.addEventListener('htmx:afterRequest', function(e) {
     try {
       const response = JSON.parse(e.detail.xhr.response);
       
-      if (response.status === 'success') {
-        showToast(response.message, true);
+      if (response.ok) {
+        showToast((response.data && response.data.message) || 'Saved successfully', true);
         closeVendorForm();
         // Refresh vendor list
         htmx.trigger('#vendors-list', 'refresh');
         // Refresh stats
         loadVendorStats();
-      } else if (response.status === 'validation_error') {
-        showToast(response.message, false);
-        if (response.errors) {
-          showFormErrors(response.errors);
-        }
+      } else if (response.code === 422 && response.fields) {
+        showToast(response.error || 'Validation failed', false);
+        showFormErrors(response.fields);
       } else {
-        showToast(response.message, false);
+        showToast(response.error || 'An error occurred', false);
       }
     } catch (error) {
       showToast('An error occurred. Please try again.', false);

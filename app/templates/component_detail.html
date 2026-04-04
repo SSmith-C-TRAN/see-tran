@@ -149,8 +149,9 @@ document.addEventListener('click', function(e){
     fetch(`/api/components/${id}`, { method:'DELETE', headers: { 'X-CSRFToken': token, 'Accept': 'application/json' } })
       .then(r=>r.json())
       .then(data=>{
-        showToast(data.message, data.status==='success');
-        if(data.status==='success'){
+        const msg = (data.data && data.data.message) || data.error || '';
+        showToast(msg, data.ok === true);
+        if(data.ok === true){
           window.location = '/components';
         } else {
           btn.disabled=false; btn.textContent=original;

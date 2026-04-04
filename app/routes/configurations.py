@@ -4,6 +4,7 @@ from io import StringIO
 from flask import Blueprint, render_template, request, jsonify, Response
 from app import db
 from app.auth import login_required, get_updated_by
+from app.utils.errors import api_ok, api_error, api_form_errors
 from app.models.tran import (
     Configuration, ConfigurationHistory, ConfigurationProduct,
     Product, ProductVersion, Agency, Function, Component, Vendor, FunctionalArea
@@ -135,7 +136,7 @@ def configuration_create():
         db.session.add(hist)
         db.session.commit()
         return render_template('fragments/configuration_row.html', c=c), 201
-    return jsonify({'error': 'validation', 'messages': form.errors}), 400
+    return api_form_errors(form)
 
 @config_bp.route('/api/configurations/<int:config_id>', methods=['POST'])
 @login_required
@@ -149,7 +150,7 @@ def configuration_update(config_id):
         db.session.add(hist)
         db.session.commit()
         return render_template('fragments/configuration_row.html', c=c)
-    return jsonify({'error': 'validation', 'messages': form.errors}), 400
+    return api_form_errors(form)
 
 @config_bp.route('/api/configurations/<int:config_id>', methods=['DELETE'])
 @login_required
@@ -159,7 +160,7 @@ def configuration_delete(config_id):
     db.session.add(hist)
     db.session.delete(c)
     db.session.commit()
-    return jsonify({'status': 'deleted', 'id': config_id})
+    return api_ok({'id': config_id})
 
 @config_bp.route('/api/configurations/<int:config_id>/history')
 @login_required
@@ -199,7 +200,7 @@ def configuration_product_create(config_id):
         db.session.add(hist)
         db.session.commit()
         return render_template('fragments/configuration_products_list.html', c=c, products=c.products)
-    return jsonify({'error': 'validation', 'messages': form.errors}), 400
+    return api_form_errors(form)
 
 @config_bp.route('/api/configuration-products/<int:cp_id>', methods=['POST'])
 @login_required
@@ -214,7 +215,7 @@ def configuration_product_update(cp_id):
         db.session.commit()
         configuration = Configuration.query.get(cp.configuration_id)
         return render_template('fragments/configuration_products_list.html', c=configuration, products=configuration.products)
-    return jsonify({'error': 'validation', 'messages': form.errors}), 400
+    return api_form_errors(form)
 
 @config_bp.route('/api/configuration-products/<int:cp_id>', methods=['DELETE'])
 @login_required
@@ -298,7 +299,7 @@ def product_create():
         db.session.add(p)
         db.session.commit()
         return render_template('fragments/product_list.html', products=Product.query.order_by(Product.name.asc()).all()), 201
-    return jsonify({'error': 'validation', 'messages': form.errors}), 400
+    return api_form_errors(form)
 
 @config_bp.route('/api/products/<int:product_id>/versions/list')
 @login_required
@@ -328,7 +329,7 @@ def product_version_create(product_id):
         db.session.commit()
         versions = ProductVersion.query.filter_by(product_id=product_id).order_by(ProductVersion.release_date.desc().nullslast()).all()
         return render_template('fragments/product_versions_list.html', p=p, versions=versions), 201
-    return jsonify({'error': 'validation', 'messages': form.errors}), 400
+    return api_form_errors(form)
 
 # --------- Wizard (Config) ---------
 
@@ -384,7 +385,7 @@ def wizard_config_confirm():
         # Create configuration
         form = ConfigurationForm()
         if not form.validate_on_submit():
-            return jsonify({'error': 'validation', 'messages': form.errors}), 400
+            return api_form_errors(form)
         c = Configuration()
         form.populate_configuration(c)
         db.session.add(c)
@@ -401,7 +402,7 @@ def wizard_config_confirm():
         return render_template('fragments/configuration_row.html', c=c), 201
     except Exception as e:
         db.session.rollback()
-        return jsonify({'error': 'server', 'message': str(e)}), 500
+        return api_error(str(e), 500)
 
 @config_bp.route('/api/products/<int:product_id>/form')
 @login_required
@@ -431,7 +432,7 @@ def product_update(product_id):
         db.session.commit()
         products = Product.query.order_by(Product.name.asc()).limit(250).all()
         return render_template('fragments/product_list.html', products=products)
-    return jsonify({'error': 'validation', 'messages': form.errors}), 400
+    return api_form_errors(form)
 
 @config_bp.route('/api/products/<int:product_id>', methods=['DELETE'])
 @login_required
@@ -440,7 +441,7 @@ def product_delete(product_id):
     # Guard: block deletion if used in any configuration
     usage = ConfigurationProduct.query.filter_by(product_id=product_id).first()
     if usage:
-        return jsonify({'error': 'in_use', 'message': 'Cannot delete product; it is used in one or more configurations.'}), 400
+        return api_error('Cannot delete product; it is used in one or more configurations.', 409)
     db.session.delete(p)
     db.session.commit()
     products = Product.query.order_by(Product.name.asc()).limit(250).all()
@@ -528,7 +529,7 @@ def configurations_import():
     file = request.files.get('csv_file')
 
     if not file or not file.filename.endswith('.csv'):
-        return jsonify({'error': 'Please upload a valid CSV file'}), 400
+        return api_error('Please upload a valid CSV file', 400)
 
     try:
         content = file.stream.read().decode('utf-8')
@@ -549,10 +550,10 @@ def configurations_import():
                 results['errors'].append(f"Row {row_num}: {str(e)}")
 
         db.session.commit()
-        return jsonify(results)
+        return api_ok(results)
     except Exception as e:
         db.session.rollback()
-        return jsonify({'error': f'Import failed: {str(e)}'}), 500
+        return api_error(f'Import failed: {str(e)}', 500)
 
 
 def _process_import_row(row: dict, default_agency_id: int = None) -> str:

@@ -2,6 +2,7 @@ from flask import Blueprint, render_template, redirect, url_for, flash, request,
 from app import db
 from app.models.tran import Agency, Configuration, ConfigurationProduct, Product, Vendor, Function, FunctionalArea
 from app.forms.forms import AgencyForm
+from app.utils.errors import api_ok, api_form_errors
 from sqlalchemy import func
 
 agency_bp = Blueprint('agency', __name__, url_prefix='/agencies')
@@ -40,8 +41,8 @@ def api_agencies_stats():
     avg_vendors = 0
     if vendor_counts:
         avg_vendors = round(sum(vc.v_count for vc in vendor_counts) / len(vendor_counts), 1)
-    return jsonify({
-        'active_implementations': active_cfgs,  # keep legacy key name
+    return api_ok({
+        'active_implementations': active_cfgs,
         'avg_implementations_per_agency': avg_impl,
         'avg_vendors_per_agency': avg_vendors
     })
@@ -70,7 +71,7 @@ def api_agencies_insights():
     top_vendor_row = top_vendor_row.join(Configuration, Configuration.id == ConfigurationProduct.configuration_id)
     top_vendor_row = top_vendor_row.group_by(Vendor.id).order_by(func.count(func.distinct(Configuration.id)).desc()).first()
 
-    return jsonify({
+    return api_ok({
         'tech_leader': tech_leader_row.name if tech_leader_row else 'N/A',
         'common_area': area_row.name if area_row else 'N/A',
         'top_vendor': top_vendor_row.name if top_vendor_row else 'N/A'
@@ -115,8 +116,8 @@ def api_create_agency():
         agency.short_name = request.form.get('short_name') or None
         db.session.add(agency)
         db.session.commit()
-        return jsonify({'status': 'success', 'id': agency.id})
-    return jsonify({'status': 'error', 'errors': form.errors}), 400
+        return api_ok({'id': agency.id})
+    return api_form_errors(form)
 
 @agency_bp.route('/api/agencies/<int:agency_id>', methods=['POST'])
 def api_update_agency(agency_id):
@@ -126,5 +127,5 @@ def api_update_agency(agency_id):
         form.populate_agency(agency)
         agency.short_name = request.form.get('short_name') or None
         db.session.commit()
-        return jsonify({'status': 'success'})
-    return jsonify({'status': 'error', 'errors': form.errors}), 400
+        return api_ok({'id': agency.id})
+    return api_form_errors(form)

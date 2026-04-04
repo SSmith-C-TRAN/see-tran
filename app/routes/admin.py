@@ -8,6 +8,7 @@ from app import db
 from app.auth import login_required, admin_required
 from app.models.tran import Agency
 from app.agents import agency_agent
+from app.utils.errors import api_ok, api_error
 
 
 admin_bp = Blueprint('admin', __name__, url_prefix='/admin')
@@ -45,12 +46,12 @@ def run_agency_agent():
     if agency_id:
         existing_record = Agency.query.get(agency_id)
         if not existing_record:
-            return jsonify({'success': False, 'error': 'Agency not found'}), 404
+            return api_error('Agency not found', 404)
         if not agency_name:
             agency_name = existing_record.name
-    
+
     if not agency_name:
-        return jsonify({'success': False, 'error': 'Agency name is required'}), 400
+        return api_error('Agency name is required', 400)
     
     result = agency_agent.execute(
         input_data={'name': agency_name},
@@ -86,7 +87,7 @@ def run_agency_agent():
         response_dict['draft'].pop('_raw_content', None)
         response_dict['draft'].pop('raw_response', None)
     
-    return jsonify(response_dict)
+    return api_ok(response_dict)
 
 
 @admin_bp.route('/api/agents/agency/commit', methods=['POST'])
@@ -105,50 +106,39 @@ def commit_agency_agent():
     agency_id = data.get('agency_id')
     
     if not draft:
-        return jsonify({'success': False, 'error': 'No draft data provided'}), 400
-    
+        return api_error('No draft data provided', 400)
+
     if not draft.get('name'):
-        return jsonify({'success': False, 'error': 'Agency name is required'}), 400
+        return api_error('Agency name is required', 400)
     
     try:
         if agency_id:
             # Update existing
             agency = Agency.query.get(agency_id)
             if not agency:
-                return jsonify({'success': False, 'error': 'Agency not found'}), 404
-            
+                return api_error('Agency not found', 404)
+
             _apply_draft_to_agency(agency, draft)
             db.session.commit()
-            
-            return jsonify({
-                'success': True,
-                'message': f"Agency '{agency.name}' updated successfully",
-                'agency_id': agency.id,
-            })
+
+            return api_ok({'message': f"Agency '{agency.name}' updated successfully", 'agency_id': agency.id})
         else:
             # Create new
             # Check for duplicate
             existing = Agency.query.filter(Agency.name.ilike(draft['name'])).first()
             if existing:
-                return jsonify({
-                    'success': False,
-                    'error': f"Agency '{draft['name']}' already exists (ID: {existing.id})",
-                }), 409
-            
+                return api_error(f"Agency '{draft['name']}' already exists (ID: {existing.id})", 409)
+
             agency = Agency()
             _apply_draft_to_agency(agency, draft)
             db.session.add(agency)
             db.session.commit()
-            
-            return jsonify({
-                'success': True,
-                'message': f"Agency '{agency.name}' created successfully",
-                'agency_id': agency.id,
-            })
-    
+
+            return api_ok({'message': f"Agency '{agency.name}' created successfully", 'agency_id': agency.id})
+
     except Exception as e:
         db.session.rollback()
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return api_error(str(e), 500)
 
 
 def _apply_draft_to_agency(agency: Agency, draft: dict) -> None:
@@ -183,7 +173,7 @@ def preview_agency_update(agency_id):
     """Get current agency data for preview before running agent."""
     agency = Agency.query.get_or_404(agency_id)
     
-    return jsonify({
+    return api_ok({
         'id': agency.id,
         'name': agency.name,
         'short_name': agency.short_name,

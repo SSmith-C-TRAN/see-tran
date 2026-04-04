@@ -455,13 +455,14 @@ class VendorPageController {
       });
       
       const response = await fetch('/api/vendors/stats?' + params.toString());
-      const data = await response.json();
-      
-      if (data.status !== 'error') {
-        document.getElementById('active-vendors-count').textContent = data.active_vendors;
-        document.getElementById('avg-systems-count').textContent = data.avg_components_per_vendor;
-        if (data.top_vendor) {
-          document.getElementById('top-vendor-count').textContent = data.top_vendor.component_count;
+      const envelope = await response.json();
+
+      if (envelope.ok && envelope.data) {
+        const data = envelope.data;
+        document.getElementById('active-vendors-count').textContent = data.total_vendors;
+        document.getElementById('avg-systems-count').textContent = data.avg_products_per_vendor;
+        if (data.most_used_vendor) {
+          document.getElementById('top-vendor-count').textContent = data.most_used_vendor_cfgs;
         }
       }
     } catch (error) {
@@ -477,12 +478,13 @@ class VendorPageController {
       });
       
       const response = await fetch('/api/vendors/performance?' + params.toString());
-      const data = await response.json();
-      
-      if (data.status !== 'error') {
-        document.getElementById('most-reliable-vendor').textContent = data.most_reliable;
-        document.getElementById('newest-vendor').textContent = data.newest;
-        document.getElementById('largest-vendor').textContent = data.largest;
+      const envelope = await response.json();
+
+      if (envelope.ok && envelope.data) {
+        const data = envelope.data;
+        document.getElementById('most-reliable-vendor').textContent = data.most_used_vendor;
+        document.getElementById('newest-vendor').textContent = data.most_recent_release_vendor;
+        document.getElementById('largest-vendor').textContent = data.most_versions;
       }
     } catch (error) {
       console.error('Error loading vendor performance:', error);
@@ -645,18 +647,18 @@ document.body.addEventListener('htmx:afterRequest', function(e) {
     try {
       const response = JSON.parse(e.detail.xhr.response);
       
-      if (response.status === 'success') {
+      if (response.ok) {
         // Trigger custom events for vendor operations
         if (e.detail.requestConfig.path.includes('POST') && !e.detail.requestConfig.path.match(/\/\d+$/)) {
           // New vendor created
-          document.dispatchEvent(new CustomEvent('vendor:created', { 
-            detail: { message: response.message } 
+          document.dispatchEvent(new CustomEvent('vendor:created', {
+            detail: { message: (response.data && response.data.message) || '' }
           }));
         } else if (e.detail.requestConfig.path.includes('POST') && e.detail.requestConfig.path.match(/\/\d+$/)) {
           // Vendor updated
           const vendorId = e.detail.requestConfig.path.match(/\/(\d+)$/)[1];
-          document.dispatchEvent(new CustomEvent('vendor:updated', { 
-            detail: { vendorId: vendorId, message: response.message } 
+          document.dispatchEvent(new CustomEvent('vendor:updated', {
+            detail: { vendorId: vendorId, message: (response.data && response.data.message) || '' }
           }));
         }
       }

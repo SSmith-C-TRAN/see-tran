@@ -107,8 +107,9 @@ function deleteComponent(id) {
   fetch(`/api/components/${id}`, { method: 'DELETE', headers: { 'X-CSRFToken': token, 'Accept': 'application/json' } })
     .then(r=>r.json())
     .then(data=>{
-      showToast(data.message, data.status==='success');
-      if (data.status==='success') {
+      const msg = (data.data && data.data.message) || data.error || '';
+      showToast(msg, data.ok === true);
+      if (data.ok === true) {
         closeComponentForm();
         htmx.trigger('#components-list','refresh');
       } else if (delBtn) { delBtn.disabled = false; delBtn.textContent='Delete'; }
@@ -127,7 +128,7 @@ function deleteComponent(id) {
 })();
 // HTMX events for form
 document.addEventListener('htmx:beforeRequest', function(e){ if(e.target && e.target.id==='component-form'){ showComponentSubmitLoading(); }});
-document.addEventListener('htmx:afterRequest', function(e){ if(e.target && e.target.id==='component-form'){ hideComponentSubmitLoading(); try { const resp = JSON.parse(e.detail.xhr.response); showToast(resp.message, resp.status==='success'); if(resp.status==='success'){ closeComponentForm(); htmx.trigger('#components-list','refresh'); } } catch(err){ showToast('Error processing response', false);} }});
+document.addEventListener('htmx:afterRequest', function(e){ if(e.target && e.target.id==='component-form'){ hideComponentSubmitLoading(); try { const resp = JSON.parse(e.detail.xhr.response); const msg = (resp.data && resp.data.message) || resp.error || ''; showToast(msg, resp.ok === true); if(resp.ok === true){ closeComponentForm(); htmx.trigger('#components-list','refresh'); } } catch(err){ showToast('Error processing response', false);} }});
 document.addEventListener('htmx:responseError', function(e){ if(e.target && e.target.id==='component-form'){ hideComponentSubmitLoading(); showToast('Network error', false); }});
 
 // Enhance validation error display (expects JSON validation_error with errors map)

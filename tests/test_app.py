@@ -21,7 +21,8 @@ def client(app):
 def test_health_check(client):
     response = client.get("/api/health")
     assert response.status_code == 200
-    assert response.json["status"] == "ok"
+    assert response.json["ok"] is True
+    assert response.json["data"]["status"] == "ok"
 
 def test_index(client):
     response = client.get("/")

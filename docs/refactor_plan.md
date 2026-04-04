@@ -72,7 +72,7 @@ Register in `mcp.json` at the repo root so Claude Code auto-discovers it.
 
 ---
 
-### Phase 1 — Architecture Cleanup
+### Phase 1 — Architecture Cleanup (complete)
 
 Remove duplication and C-TRAN-specific artifacts. Establish consistent patterns.
 
