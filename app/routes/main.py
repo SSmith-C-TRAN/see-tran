@@ -1044,7 +1044,7 @@ def agency_edit_form_fragment(agency_id):
     try:
         agency = Agency.query.get_or_404(agency_id)
         form = AgencyForm()
-        form.populate_agency(agency)
+        form.populate_from_agency(agency)
         return render_template('fragments/agency_form.html', form=form, agency=agency)
     except Exception as e:
         return html_error_fragment(f"Error loading agency edit form: {str(e)}")

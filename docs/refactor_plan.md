@@ -15,11 +15,6 @@
 
 **What needs fixing:**
 - Agent framework is over-engineered: custom BaseAgent, provider protocol, tool registry — all to wrap a single Anthropic API call in `agency_agent.py`; vendor and component agents are 3-line stubs
-- No CLAUDE.md — the project is not AI-agent-navigable
-- C-TRAN-specific artifacts (`Fleet` enum with values like `vine`, `para`) embedded in shared models
-- GTFS data models (15 models, 369-line loader) are orthogonal to the app's core purpose
-- Routes split inconsistently: some under `/api/`, some not; blueprint responsibilities overlap
-- Forms in `forms.py` duplicate field definitions already in SQLAlchemy models
 - No public API; no vendor self-service; no contribution workflow
 - No deployment config (no Docker, no Procfile, no deploy guide)
 
@@ -73,6 +68,13 @@ Register in `mcp.json` at the repo root so Claude Code auto-discovers it.
 ---
 
 ### Phase 1 — Architecture Cleanup (complete)
+
+> **Verification notes (2026-04-04):**
+> - 1.1: bloat removed; `base.py` + `providers/` intentionally deferred to Phase 2 agent rewrite; `additional_metadata` present on Agency, Component, Product, Configuration — intentional flex columns
+> - 1.2: `ServiceType` model seeded; `Fleet` enum removed ✓
+> - 1.3: `agency.py` dead routes removed (blueprint prefix `/agencies` + full `/api/agencies/*` paths = wrong URL); `add_agency` POST endpoint added at `/agencies/new`; edit form bug fixed (`populate_from_agency` not `populate_agency`); full consolidation into `api.py` deferred to Phase 2
+> - 1.4: forms remain in `app/forms/forms.py`; co-location deferred (mixing Flask-WTF into `tran.py` adds more noise than value)
+> - 1.5: all `/api/` JSON routes use `api_ok`/`api_error` envelope ✓
 
 Remove duplication and C-TRAN-specific artifacts. Establish consistent patterns.
 
