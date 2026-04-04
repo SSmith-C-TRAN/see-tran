@@ -10,7 +10,7 @@
     "dev": "npm run build:css -- --watch",
     "build": "npm run build:css && npm run copy:htmx",
     "build:css": "npx tailwindcss -i ./tailwind/input.css -o ./app/static/css/tailwind.css --minify",
-    "copy:htmx": "cp node_modules/htmx.org/dist/htmx.min.js app/static/js/"
+    "copy:htmx": "node -e \"require('fs').copyFileSync('node_modules/htmx.org/dist/htmx.min.js','app/static/js/htmx.min.js')\""
   },
   "keywords": [],
   "author": "",
