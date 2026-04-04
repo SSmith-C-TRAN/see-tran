@@ -1,59 +1,59 @@
 # app/utils/errors.py
 from flask import jsonify, render_template_string
 
-def json_error_response(message, status_code=400, details=None):
-    """
-    Return a JSON error response for API endpoints
-    """
-    response = {
-        'status': 'error',
-        'message': message
-    }
+
+# ---------------------------------------------------------------------------
+# JSON API responses — use these for all /api/ endpoints
+# ---------------------------------------------------------------------------
+
+def api_ok(data=None, status=200):
+    """Standard success envelope: {"ok": true, "data": {...}}"""
+    return jsonify({"ok": True, "data": data}), status
+
+
+def api_error(message: str, status=400, details=None):
+    """Standard error envelope: {"ok": false, "error": "...", "code": N}"""
+    body = {"ok": False, "error": message, "code": status}
     if details:
-        response['details'] = details
-    
-    return jsonify(response), status_code
+        body["details"] = details
+    return jsonify(body), status
+
+
+def api_validation_error(errors: dict):
+    """Validation error with per-field details (422)."""
+    return jsonify({"ok": False, "error": "Validation failed", "code": 422, "fields": errors}), 422
+
+
+def api_form_errors(form):
+    """Convert a WTForms form's errors into a 422 validation response."""
+    errors = {
+        field: errs[0] if errs else "Invalid"
+        for field, errs in form.errors.items()
+    }
+    return api_validation_error(errors)
+
+
+# ---------------------------------------------------------------------------
+# Legacy helpers — kept for existing HTMX fragment routes
+# ---------------------------------------------------------------------------
+
+def json_error_response(message, status_code=400, details=None):
+    return api_error(message, status_code, details)
+
 
 def json_success_response(message="Success", data=None):
-    """
-    Return a JSON success response for API endpoints
-    """
-    response = {
-        'status': 'success',
-        'message': message
-    }
-    if data:
-        response['data'] = data
-    
-    return jsonify(response)
+    return api_ok(data)
+
 
 def json_validation_error_response(message="Validation failed", errors=None):
-    """
-    Return a JSON validation error response with field-specific errors
-    """
-    response = {
-        'status': 'validation_error',
-        'message': message
-    }
-    if errors:
-        response['errors'] = errors
-    
-    return jsonify(response), 422
+    return api_validation_error(errors or {})
+
 
 def json_form_error_response(form):
-    """
-    Convert Flask-WTF form errors to JSON response
-    """
-    errors = {}
-    for field_name, field_errors in form.errors.items():
-        errors[field_name] = field_errors[0] if field_errors else 'Invalid input'
-    
-    return json_validation_error_response("Please correct the errors below", errors)
+    return api_form_errors(form)
+
 
 def html_error_fragment(message, title="Error"):
-    """
-    Return an HTML error fragment for HTMX responses (legacy support)
-    """
     template = '''
     <div class="bg-red-900/20 border border-red-700/30 rounded-lg p-4 mb-4">
         <div class="flex items-center space-x-3">
@@ -69,10 +69,8 @@ def html_error_fragment(message, title="Error"):
     '''
     return render_template_string(template, title=title, message=message)
 
+
 def html_success_fragment(message, title="Success"):
-    """
-    Return an HTML success fragment for HTMX responses (legacy support)
-    """
     template = '''
     <div class="bg-green-900/20 border border-green-700/30 rounded-lg p-4 mb-4">
         <div class="flex items-center space-x-3">

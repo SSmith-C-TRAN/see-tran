@@ -1,43 +1,23 @@
 # app/agents/__init__.py
 """
-Agent infrastructure for automated data gathering and enrichment.
+AI research agents for automated data gathering and enrichment.
 
-Agents use LLM providers with web search to research entities and propose
-database updates. Results are returned for human review before committing.
+Each agent is a standalone module with a `run(record_id, *, dry_run)` function.
+Results are returned as AgentResult for human review before committing.
 
 Usage:
-    from app.agents import agency_agent
-    
-    result = agency_agent.execute({'name': 'TriMet'})
+    from app.agents.agency_agent import run as run_agency_agent
+    result = run_agency_agent(agency_id=42)
     if result.success:
-        # Review result.draft, result.diff, result.skipped_fields
-        # Then commit if approved
+        # review result.draft, result.diff
+        # commit if approved
+
+CLI:
+    flask agent run agency --id 42
+    flask agent run vendor --name "Cubic Transportation Systems"
+    flask agent run agency --all --dry-run
 """
 
-from .base import BaseAgent, AgentResult, LogEntry
-from .providers import get_provider, LLMProvider
-from .tools import get_tool_registry, register_tool, Tool, ToolResult
+from .base import AgentResult, LogEntry
 
-# Import agents (this also registers their tools)
-from .agency_agent import agency_agent, AgencyAgent
-
-__all__ = [
-    # Base classes
-    'BaseAgent',
-    'AgentResult', 
-    'LogEntry',
-    
-    # Providers
-    'get_provider',
-    'LLMProvider',
-    
-    # Tools
-    'get_tool_registry',
-    'register_tool',
-    'Tool',
-    'ToolResult',
-    
-    # Agents
-    'agency_agent',
-    'AgencyAgent',
-]
+__all__ = ['AgentResult', 'LogEntry']

@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "see-tran": {
+      "command": "python",
+      "args": ["-m", "app.mcp_server"],
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "FLASK_ENV": "development"
+      }
+    }
+  }
+}

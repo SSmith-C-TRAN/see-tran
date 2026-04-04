@@ -42,19 +42,17 @@ product_integration = db.Table(
     db.Column('integration_point_id', db.Integer, db.ForeignKey('integration_points.id'), primary_key=True)
 )
 
+configuration_service_type = db.Table(
+    'configuration_service_type',
+    db.Column('configuration_id', db.Integer, db.ForeignKey('configurations.id'), primary_key=True),
+    db.Column('service_type_id', db.Integer, db.ForeignKey('service_types.id'), primary_key=True)
+)
+
 # Enums
 class Criticality(enum.Enum):
     high = "high"
     medium = "medium"
     low = "low"
-
-class Fleet(enum.Enum):
-    fixed = "Fixed Route"
-    vine = "The Vine"
-    para = "Paratransit"
-    current = "The Current"
-    facilities = "Facilities"
-    security = "Security"
 
 class LifecycleStage(enum.Enum):
     planned = "planned"          # Identified / slated for adoption
@@ -80,7 +78,8 @@ class Agency(db.Model):
     contact_email = db.Column(db.String(255))
     contact_phone = db.Column(db.String(50))
     contact_name = db.Column(db.String(100))
-    short_name = db.Column(db.String(50)) # use short name for constructing agency specific URLs for images, etc.
+    short_name = db.Column(db.String(50))  # used for constructing agency-specific image paths
+    gtfs_feed_url = db.Column(db.String(512))  # public GTFS static feed URL
     additional_metadata = db.Column(db.JSON)
     __table_args__ = (
         db.UniqueConstraint('name', name='uq_transit_system_name'),
@@ -380,6 +379,29 @@ class ProductVersion(db.Model):
     def __repr__(self):
         return f"<ProductVersion(product_id={self.product_id}, version={self.version})>"
 
+class ServiceType(db.Model):
+    """Standard service type categories for transit configurations.
+
+    Pre-seeded with: Fixed, Rail, Paratransit, OnDemand.
+    Linked to Configurations via many-to-many so a single configuration
+    (e.g., a scheduling system) can apply to multiple service modes.
+    """
+    __tablename__ = 'service_types'
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(50), nullable=False, unique=True)
+    description = db.Column(db.String(255))
+
+    configurations = db.relationship(
+        'Configuration',
+        secondary='configuration_service_type',
+        back_populates='service_types',
+    )
+
+    def __repr__(self):
+        return f"<ServiceType(name={self.name})>"
+
+
 class Configuration(db.Model):
     __tablename__ = 'configurations'
     id = db.Column(db.Integer, primary_key=True)
@@ -400,6 +422,7 @@ class Configuration(db.Model):
     component = db.relationship('Component', back_populates='configurations')
     products = db.relationship('ConfigurationProduct', back_populates='configuration', cascade='all, delete-orphan')
     history_entries = db.relationship('ConfigurationHistory', back_populates='configuration', cascade='all, delete-orphan')
+    service_types = db.relationship('ServiceType', secondary='configuration_service_type', back_populates='configurations')
 
     __table_args__ = (
         db.UniqueConstraint('agency_id', 'function_id', 'component_id', name='uq_configuration_agency_function_component'),
