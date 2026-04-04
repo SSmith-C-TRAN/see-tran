@@ -119,7 +119,7 @@ function handleHtmxError(event) {
     if (xhr.status === 404) {
         message = 'Resource not found.';
     } else if (xhr.status === 500) {
-        message = 'Server error. Please try again later.';
+        message = 'Server error. Check your network connection.';
     } else if (xhr.status === 403) {
         message = 'You do not have permission to perform this action.';
     }
