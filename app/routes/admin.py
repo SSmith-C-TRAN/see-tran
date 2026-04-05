@@ -7,7 +7,7 @@ from flask import Blueprint, render_template, request, jsonify, session
 from app import db
 from app.auth import login_required, admin_required
 from app.models.tran import Agency
-from app.agents import agency_agent
+from app.agents.agency_agent import research as agency_research, _apply_to_agency
 from app.utils.errors import api_ok, api_error
 
 
@@ -53,10 +53,7 @@ def run_agency_agent():
     if not agency_name:
         return api_error('Agency name is required', 400)
     
-    result = agency_agent.execute(
-        input_data={'name': agency_name},
-        existing_record=existing_record,
-    )
+    result = agency_research(agency_name, existing_record=existing_record)
     
     # Convert to dict and sanitize for JSON serialization
     response_dict = result.to_dict()
@@ -118,7 +115,7 @@ def commit_agency_agent():
             if not agency:
                 return api_error('Agency not found', 404)
 
-            _apply_draft_to_agency(agency, draft)
+            _apply_to_agency(agency, draft)
             db.session.commit()
 
             return api_ok({'message': f"Agency '{agency.name}' updated successfully", 'agency_id': agency.id})
@@ -130,7 +127,7 @@ def commit_agency_agent():
                 return api_error(f"Agency '{draft['name']}' already exists (ID: {existing.id})", 409)
 
             agency = Agency()
-            _apply_draft_to_agency(agency, draft)
+            _apply_to_agency(agency, draft)
             db.session.add(agency)
             db.session.commit()
 
@@ -140,31 +137,6 @@ def commit_agency_agent():
         db.session.rollback()
         return api_error(str(e), 500)
 
-
-def _apply_draft_to_agency(agency: Agency, draft: dict) -> None:
-    """Apply draft fields to an Agency model."""
-    # Map draft keys to model fields
-    field_map = {
-        'name': 'name',
-        'short_name': 'short_name',
-        'location': 'location',
-        'description': 'description',
-        'website': 'website',
-        'ceo': 'ceo',
-        'address_hq': 'address_hq',
-        'phone_number': 'phone_number',
-        'contact_email': 'contact_email',
-        'transit_map_link': 'transit_map_link',
-        'email_domain': 'email_domain',
-    }
-    
-    for draft_key, model_field in field_map.items():
-        if draft_key in draft:
-            value = draft[draft_key]
-            # Don't set empty strings
-            if value == '':
-                value = None
-            setattr(agency, model_field, value)
 
 
 @admin_bp.route('/api/agents/agency/preview/<int:agency_id>')

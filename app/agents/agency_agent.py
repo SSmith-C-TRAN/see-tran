@@ -1,28 +1,37 @@
 # app/agents/agency_agent.py
 """
-Agency Agent - builds or updates transit agency records using LLM with web search.
+Agency agent — researches a transit agency using Claude with web search
+and returns a draft of proposed field updates for human review.
+
+Entry points:
+    run(agency_id, *, dry_run=False)  — CLI: looks up by ID, applies if not dry_run
+    research(name, existing_record)   — Admin UI: returns draft for human review
 """
 
 import json
 import re
+from datetime import datetime
 from typing import Any
 
-from .base import BaseAgent, AgentResult
+import anthropic
+from flask import current_app
+
+from .utils import AgentResult, LogEntry, log_agent_event
 
 
 SYSTEM_PROMPT = """You are a research assistant gathering information about public transit agencies.
 
 SEARCH STRATEGY:
 - Search for "[agency name] official website" first
-- Search for "[agency name] leadership CEO general manager" 
+- Search for "[agency name] leadership CEO general manager"
 - Search for "[agency name] contact headquarters address"
 
 Keep searches focused. Return ONLY a JSON object with verified facts.
-Omit fields where information is uncertain.
+Omit fields where information is uncertain or unknown.
 
 {
   "name": "Official agency name",
-  "short_name": "Acronym like BART or WMATA", 
+  "short_name": "Acronym like BART or WMATA",
   "location": "City, State",
   "description": "Brief 1-2 sentence description",
   "website": "https://...",
@@ -32,162 +41,182 @@ Omit fields where information is uncertain.
   "contact_email": "General contact email",
   "transit_map_link": "URL to system map",
   "email_domain": "domain.org"
-  "ridership": "Approximate annual ridership (if available)"
-  "vehicles": "Approximate number of vehicles in fleet (if available)"
 }"""
 
+# Fields the agent can populate on the Agency model
+AGENCY_FIELDS = (
+    'name', 'short_name', 'location', 'description', 'website',
+    'ceo', 'address_hq', 'phone_number', 'contact_email',
+    'transit_map_link', 'email_domain',
+)
 
-class AgencyAgent(BaseAgent):
-    """Agent for creating and updating transit agency records."""
-    
-    @property
-    def agent_type(self) -> str:
-        return 'agency'
-    
-    def execute(self, input_data: dict, existing_record: Any | None = None) -> AgentResult:
-        """
-        Execute agency research and data extraction in a single LLM call.
-        
-        Args:
-            input_data: {'name': 'Agency Name'} - the agency to research
-            existing_record: Optional Agency model instance for updates
-            
-        Returns:
-            AgentResult with draft agency data
-        """
-        self._logs = []  # Reset logs for new execution
-        
-        agency_name = input_data.get('name', '').strip()
-        if not agency_name:
-            return self._create_result(
+
+def run(agency_id: int, *, dry_run: bool = False) -> AgentResult:
+    """
+    CLI entry point. Looks up the agency by ID, researches it, and applies
+    the diff to the database unless dry_run is True.
+    """
+    from app.models.tran import Agency
+    from app import db
+
+    agency = Agency.query.get(agency_id)
+    if not agency:
+        return AgentResult(success=False, error=f'Agency {agency_id} not found')
+
+    result = research(agency.name, existing_record=agency)
+
+    if result.success and not dry_run and result.diff:
+        _apply_to_agency(agency, result.draft)
+        db.session.commit()
+
+    return result
+
+
+def research(name: str, existing_record: Any = None) -> AgentResult:
+    """
+    Research an agency by name using Claude with web search.
+    Returns a draft for human review — does not write to the database.
+    """
+    logs: list[LogEntry] = []
+    model = current_app.config['AGENT_MODELS']['agency']
+
+    logs.append(LogEntry(
+        timestamp=datetime.utcnow().isoformat(),
+        event_type='decision',
+        details={'action': 'start', 'agency_name': name},
+    ))
+
+    try:
+        draft, llm_log = _call_llm(name, model)
+        logs.append(llm_log)
+
+        if '_parse_error' in draft:
+            logs.append(LogEntry(
+                timestamp=datetime.utcnow().isoformat(),
+                event_type='error',
+                details={'stage': 'extraction', 'error': draft['_parse_error']},
+            ))
+            return AgentResult(
                 success=False,
-                error='Agency name is required',
+                logs=logs,
+                model_used=model,
+                error=f"Failed to parse response: {draft['_parse_error']}",
             )
-        
-        self._log('decision', {'action': 'start', 'agency_name': agency_name})
-        
-        try:
-            # Single call: research + extract
-            draft = self._research_and_extract(agency_name)
-            
-            if '_parse_error' in draft:
-                self._log('error', {
-                    'stage': 'extraction',
-                    'error': draft.get('_parse_error'),
-                })
-                return self._create_result(
-                    success=False,
-                    error=f"Failed to parse response: {draft.get('_parse_error')}",
-                )
-            
-            # Try to fetch logo if we have a website
-            if draft.get('website'):
-                self._fetch_agency_images(draft)
-            
-            # Compute diff if updating
-            diff = None
-            is_update = existing_record is not None
-            
-            if is_update:
-                existing_data = self._record_to_dict(existing_record)
-                diff = self._compute_diff(existing_data, draft)
-                self._log('decision', {
-                    'action': 'computed_diff',
-                    'changed_fields': list(diff.keys()),
-                })
-            
-            result = self._create_result(
-                success=True,
-                draft=draft,
-                skipped_fields={},
-                diff=diff,
-                is_update=is_update,
-            )
-            
-            self._save_audit_log(result, input_data)
-            
-            return result
-            
-        except Exception as e:
-            self._log('error', {'stage': 'execution', 'error': str(e)})
-            return self._create_result(
-                success=False,
-                error=str(e),
-            )
-    
-    def _research_and_extract(self, agency_name: str) -> dict:
-        """
-        Single LLM call: search the web and return structured JSON.
-        """
-        messages = [
-            {
-                'role': 'user',
-                'content': f'Research the public transit agency "{agency_name}" and return the JSON data.',
-            }
-        ]
-        
-        response = self._call_llm(messages, SYSTEM_PROMPT, use_search=True)
-        
-        return self._extract_json_from_response(response.content)
-    
-    def _extract_json_from_response(self, content: str) -> dict:
-        """Extract JSON from LLM response, handling various formats."""
-        content = content.strip()
-        
-        # Try direct parse first
-        try:
-            return json.loads(content)
-        except json.JSONDecodeError:
-            pass
-        
-        # Remove markdown code blocks
-        if '```' in content:
-            match = re.search(r'```(?:json)?\s*([\s\S]*?)```', content)
-            if match:
-                try:
-                    return json.loads(match.group(1).strip())
-                except json.JSONDecodeError:
-                    pass
-        
-        # Find JSON object between first { and last }
-        start = content.find('{')
-        end = content.rfind('}')
-        if start != -1 and end != -1 and end > start:
+
+        diff = None
+        is_update = existing_record is not None
+        if is_update:
+            diff = _compute_diff(existing_record, draft)
+            logs.append(LogEntry(
+                timestamp=datetime.utcnow().isoformat(),
+                event_type='decision',
+                details={'action': 'computed_diff', 'changed_fields': list(diff.keys())},
+            ))
+
+        result = AgentResult(
+            success=True,
+            draft=draft,
+            diff=diff,
+            logs=logs,
+            model_used=model,
+            is_update=is_update,
+        )
+        log_agent_event(result, {'name': name}, 'agency')
+        return result
+
+    except Exception as e:
+        logs.append(LogEntry(
+            timestamp=datetime.utcnow().isoformat(),
+            event_type='error',
+            details={'stage': 'execution', 'error': str(e)},
+        ))
+        return AgentResult(success=False, logs=logs, model_used=model, error=str(e))
+
+
+def _call_llm(agency_name: str, model: str) -> tuple[dict, LogEntry]:
+    """Call Claude with web search and return parsed JSON + a log entry."""
+    api_key = current_app.config.get('CLAUDE_API_KEY')
+    client = anthropic.Anthropic(api_key=api_key)
+
+    start = datetime.utcnow()
+    response = client.messages.create(
+        model=model,
+        max_tokens=4096,
+        system=SYSTEM_PROMPT,
+        messages=[{
+            'role': 'user',
+            'content': f'Research the public transit agency "{agency_name}" and return the JSON data.',
+        }],
+        tools=[{
+            'type': 'web_search_20250305',
+            'name': 'web_search',
+            'max_uses': 5,
+        }],
+    )
+    duration_ms = int((datetime.utcnow() - start).total_seconds() * 1000)
+
+    # Extract text from response (ignoring tool_use / tool_result blocks)
+    text = ''.join(
+        block.text for block in response.content
+        if hasattr(block, 'type') and block.type == 'text'
+    )
+
+    log_entry = LogEntry(
+        timestamp=start.isoformat(),
+        event_type='llm_call',
+        details={
+            'model': response.model,
+            'input_tokens': response.usage.input_tokens,
+            'output_tokens': response.usage.output_tokens,
+        },
+        duration_ms=duration_ms,
+    )
+
+    return _extract_json(text), log_entry
+
+
+def _extract_json(content: str) -> dict:
+    """Extract a JSON object from an LLM response string."""
+    content = content.strip()
+
+    try:
+        return json.loads(content)
+    except json.JSONDecodeError:
+        pass
+
+    if '```' in content:
+        match = re.search(r'```(?:json)?\s*([\s\S]*?)```', content)
+        if match:
             try:
-                return json.loads(content[start:end + 1])
-            except json.JSONDecodeError as e:
-                return {
-                    '_parse_error': f'Found JSON-like content but failed to parse: {e}',
-                    '_raw_content': content[start:end + 1][:500],
-                }
-        
-        return {
-            '_parse_error': 'Could not find valid JSON in response',
-            '_raw_content': content[:500],
-        }
-    
-    def _fetch_agency_images(self, draft: dict) -> None:
-        """Attempt to fetch logo and header images if tool is available."""
-        # TODO: Re-enable when image_fetch tool is properly registered
-        self._log('info', {'action': 'skip_images', 'reason': 'image_fetch disabled'})
-        return
-    
-    def _record_to_dict(self, record) -> dict:
-        """Convert an Agency model instance to a dict for comparison."""
-        return {
-            'name': record.name,
-            'short_name': record.short_name,
-            'location': record.location,
-            'description': record.description,
-            'website': record.website,
-            'ceo': record.ceo,
-            'address_hq': record.address_hq,
-            'phone_number': record.phone_number,
-            'contact_email': record.contact_email,
-            'transit_map_link': record.transit_map_link,
-            'email_domain': record.email_domain,
-        }
+                return json.loads(match.group(1).strip())
+            except json.JSONDecodeError:
+                pass
+
+    start = content.find('{')
+    end = content.rfind('}')
+    if start != -1 and end != -1 and end > start:
+        try:
+            return json.loads(content[start:end + 1])
+        except json.JSONDecodeError as e:
+            return {'_parse_error': f'Found JSON-like content but failed to parse: {e}'}
+
+    return {'_parse_error': 'Could not find valid JSON in response'}
 
 
-# Singleton instance
-agency_agent = AgencyAgent()
+def _compute_diff(existing_record: Any, proposed: dict) -> dict:
+    """Return a dict of {field: {old, new}} for fields that differ."""
+    diff = {}
+    for field_name in AGENCY_FIELDS:
+        old = getattr(existing_record, field_name, None)
+        new = proposed.get(field_name)
+        if new is not None and old != new:
+            diff[field_name] = {'old': old, 'new': new}
+    return diff
+
+
+def _apply_to_agency(agency: Any, draft: dict) -> None:
+    """Write draft field values onto an Agency instance (does not commit)."""
+    for field_name in AGENCY_FIELDS:
+        if field_name in draft:
+            value = draft[field_name] or None  # treat empty string as None
+            setattr(agency, field_name, value)
