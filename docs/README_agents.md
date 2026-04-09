@@ -1,117 +1,53 @@
-# See‑Tran: Agent‑assisted crowdsourcing guide
+# See-Tran: Agent-assisted data enrichment
 
-See‑Tran is an open‑source web app for modeling a transit agency’s technology landscape and benchmarking across agencies. This guide explains how the app is organized today, how people at public transit agencies can contribute high‑quality data, and where “agents” (automated helpers) fit in to scale coverage across the U.S., Canada, and Mexico.
+See-Tran uses Claude-powered research agents to bootstrap and enrich transit agency data. Agents search the web, extract structured facts, and surface them for human review — nothing is written to the database automatically.
 
-## What the app does
+## How agents work
 
-- Catalogs the architecture of transit technology: agencies → functional areas → functions → components
-- Tracks real deployments using Configurations (Agency + Function + Component)
-- Links vendor Products and Product Versions used within those configurations
-- Provides fast, printable summaries and lightweight analytics to compare vendors and capabilities
-- Uses a simple, responsive UI with HTMX for quick, fragment‑level updates (no page reload)
+1. An admin triggers a run from the CLI or the Agent UI (`/admin/agents/agency`)
+2. The agent calls Claude with web search enabled and extracts a structured JSON draft
+3. The draft is returned for review — the admin can inspect the diff and commit or discard
+4. Every run is appended to `logs/agent_audit.jsonl`
 
-## Core data model (mental map)
+## Agency agent (implemented)
 
-- Agency: A public transit organization
-- FunctionalArea: Business domains (e.g., Operations, Planning, Maintenance)
-- Function: A capability within a Functional Area; has Criticality (high/medium/low)
-- Component: A system/subsystem that implements one or more Functions
-- Configuration: The implementation record – ties an Agency + Function + Component together, with Status, Deployment Date, Version Label, and Notes
-- Vendor: Technology provider
-- Product, ProductVersion: Vendor offerings and releases; linked to Configurations via ConfigurationProduct
-- IntegrationPoint, Standard: Where systems connect and which standards apply (early stage)
-- Tags/TagGroups: Lightweight classification (optional)
+Researches a transit agency by name and proposes updates to core fields:
 
-Uniqueness highlights and assumptions:
-- Agency.name and Vendor.name are unique
-- Product.name is unique; ProductVersion is unique on (product_id, version)
-- Configuration is unique per (agency_id, function_id, component_id)
-- A Component is a system used by agencies; a Product is a vendor’s offering linked to usage via ConfigurationProduct
+`name`, `short_name`, `location`, `description`, `website`, `ceo`, `address_hq`, `phone_number`, `contact_email`, `transit_map_link`, `email_domain`
 
-## How contributors use the app
+**CLI usage:**
 
-1) Browse and search
-- Functional Areas and Functions have dedicated pages, including print‑friendly views
-- Components and Vendors show quick usage stats derived from Configurations
+```bash
+flask agent run agency --id 42            # Research and apply changes
+flask agent run agency --id 42 --dry-run  # Preview only, no DB write
+flask agent run agency --all --dry-run    # Preview all agencies
+flask agent status                        # Show run history from audit log
+```
 
-2) Create a Configuration (the backbone)
-- From the Configurations page:
-  - Filters: Agency, Function, Status (with live function search)
-  - Quick Create: pick Functional Area → search/select Function → pick Component → select Status → Create
-  - Wizard: guided steps; when you come from an agency page, the agency is preselected
-- After creating a Configuration, optionally attach Products/Versions in the details panel
+**Admin UI:** `/admin/agents/agency` — pick an existing agency or enter a new name, run the agent, inspect the diff, then commit.
 
-3) Keep entities tidy
-- Keep Function names concise, use criticality to indicate importance
-- Components represent systems; don’t duplicate by environment (use Status/Notes/Version Label)
-- Products/Versions reflect vendor nomenclature
+## Suggestion reviewer (implemented)
 
-4) Print and share
-- /functional‑areas/print and /functions/print offer clean summaries for meetings and reports
+Agent-proposed changes can be routed to the `Suggestion` table for human review before being applied. Reviewers work through `/admin/suggestions` — accept applies the value directly to the entity, reject discards it. Batch accept/reject is supported.
 
-## Where agents fit (today and near‑term)
+## Vendor and component agents (Phase 2 — not yet implemented)
 
-Located in `app/agents/` (scaffolded, evolving):
-- agency_agent.py: discovers/updates agency facts (description, contacts, web assets, logos, headers)
-- vendor_agent.py: builds/updates vendor profiles (news, products, metadata)
-- component_agent.py: maps components, functions supported, and relationships
+`vendor_agent.py` and `component_agent.py` exist as stubs. Running them returns a not-implemented error. Implementation is planned for Phase 2.
 
-Initial operating model (human‑in‑the‑loop):
-- “Suggest” mode: agents propose additions/edits with provenance (URLs, timestamps)
-- Reviewer UI (planned): human curators accept/modify/reject suggestions
-- Batch seeding: agents help bootstrap Agencies, Vendors, Components, and candidate Functions per agency
+## Data quality principles
 
-Data quality principles for agents:
-- Verifiable sources only; include links
-- Prefer official sites over third‑party directories
-- Don’t guess: mark uncertain fields and route to reviewers
-- Normalize names (e.g., remove marketing fluff; consistent casing)
+- Verifiable sources only — agents use web search and prefer official sites
+- Omit uncertain fields rather than guessing
+- Normalize names to match existing conventions (no marketing suffixes, consistent casing)
+- Agents never auto-commit — all changes require human approval
 
-## App architecture (in brief)
+## Architecture
 
-- Backend: Flask + SQLAlchemy + Alembic (migrations)
-- Frontend: Jinja templates, Tailwind CSS, HTMX fragments
-- Auth: login_required applied to authoring endpoints; OAuth for hosted builds
-- Data: seed JSON and loader scripts in `/data` and `/scripts`
-- Tests: basic pytest coverage; expand as features stabilize
+Agents use the Anthropic SDK directly (`anthropic.messages.create`) with the `web_search_20250305` tool. No provider abstraction layer. Each agent module exposes:
 
-Key folders you’ll use:
-- `app/models/tran.py` – All core models (Agency, FunctionalArea, Function, Component, Vendor, Product, ProductVersion, Configuration…)
-- `app/routes/` – Blueprints and fragment endpoints (e.g., configurations, vendors, products)
-- `app/templates/` – Pages and fragment templates (HTMX targets)
-- `docs/` – Project docs (this file, setup, roadmap)
-- `data/` – Example seed data; agency/vendor/product/component JSON
-- `scripts/` – Data loaders and utilities
+- `run(record_id, *, dry_run=False)` — CLI entry point; applies diff if not dry-run
+- `research(name, existing_record)` — Admin UI entry point; returns draft for review
 
-HTMX patterns (how the UI stays fast):
-- Lists load into fragments (`#…-list`) on `hx-trigger="load"`
-- Filters and searches return lightweight HTML partials (e.g., `<option>` lists)
-- Forms post to API routes that return one row or a refreshed fragment
+Shared utilities (`app/agents/utils.py`): `AgentResult`, `LogEntry`, `log_agent_event()`.
 
-## Roles and moderation (crowdsourcing posture)
-
-- Authenticated contributors (agency staff, partners) can propose data
-- Moderators (trusted curators) review suggestions and resolve conflicts
-- Agency‑scoped permissions for sensitive edits are planned for hosted deployments
-
-## Privacy and scope
-
-- Keep personal data out; use organizational contacts where possible
-- Public facts only (websites, official docs, procurements)
-- The goal is comprehensive, verifiable coverage across US, Canada, and Mexico
-
-## Roadmap for agents and curation
-
-- Deep research agents for agencies and vendors with deduplication
-- Product–Function alignment at scale; heuristic + reviewer confirmation
-- Integration mapping and standards coverage
-- Enhanced search (full‑text) and similarity (peer agency recommendations)
-- Reviewer dashboards and bulk actions
-
-## Quick start (local)
-
-- Python 3.12+, `pip install -r requirements.txt`
-- `flask run` or `python run.py`
-- Optional: load sample data from `/data` via scripts in `/scripts`
-
-Have feedback or want to help? Open an issue or PR, or reach out to the maintainers. Our aim is to make it easy for transit professionals to document and compare their technology — with transparent, trustworthy data and helpful automation.
+See `docs/agent_architecture.md` for full implementation detail.

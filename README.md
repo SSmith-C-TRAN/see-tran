@@ -1,116 +1,136 @@
-See-Tran — Open source transit technology modeling and benchmarking
-=================================================================
+See-Tran — Open source transit technology benchmarking
+=======================================================
 
-See-Tran is an open-source web application for modeling a transit agency’s technology landscape and benchmarking across agencies. It helps transit technology professionals catalog functional areas, map functions to components, track vendor products and versions, and understand integration points across the stack.
+See-Tran is an open-source platform for modeling transit agency technology landscapes and benchmarking across agencies. Transit professionals document which systems they use, enabling cross-agency comparison of vendors, products, and technology choices.
 
-What you can do with See-Tran
-- Model your current-state architecture: agencies → functional areas → functions → components
-- Track real deployments using Configurations (agency + function + component)
-- Map vendor Products and Product Versions used within each configuration
-- Analyze vendor footprint and usage across agencies/functions
-- View and share clean, print-friendly summaries for Functional Areas and Functions
-- Browse internal documentation in-app (Markdown-based, at /docs)
+**Who it's for:** Transit CIOs, IT managers, vendor managers, and analysts benchmarking capabilities and vendor presence across agencies.
 
-Who it’s for
-- Transit CIOs/CTOs and enterprise architects
-- IT managers and application owners
-- Vendor managers and procurement teams
-- Analysts benchmarking capabilities and vendor presence across agencies
+---
 
-Core domain model (high level)
-- Agency: A public transit organization using the platform
-- FunctionalArea: A business domain (e.g., Operations, Maintenance, Planning)
-- Function: A specific capability within a Functional Area; includes Criticality (high/medium/low)
-- Component: A system or subsystem that implements one or more Functions
-- Configuration: The key implementation record tying an Agency + Function + Component together, with status, deployment date, version label, and notes
-- Vendor: A technology provider
-- Product and ProductVersion: Vendor offerings and their releases; Products can be linked to Configurations via ConfigurationProduct
-- IntegrationPoint and Standard: Where systems connect and which standards apply
-- Tags and TagGroups: Lightweight classification for components/integrations
+## What it does
 
-Key features (current)
-- Functional Areas and Functions
-	- Management UI with search and details
-	- Print views:
-		- /functional-areas/print — grid of all Functional Areas
-		- /functions/print — all Functions grouped by Functional Area with criticality and quick counts
-- Components
-	- List with agency and function usage summaries (derived from Configurations)
-	- Rich details pane including deployment recency, roles, and additional metadata
-- Vendors and Products
-	- Vendor list with product and usage counts (based on Product ↔ ConfigurationProduct links)
-	- Vendor details grouped by Functional Area with used/unused products
-	- Basic performance and usage metrics (most versions, most recent release, most used vendor)
-- Agencies
-	- List with synthetic implementation counts derived from Configurations
-	- Basic stats: active implementations, average implementations per agency, average vendors per agency
-- Configurations
-	- The backbone of usage/benchmarking: each record represents a deployed component for a function at an agency
-	- Supports associated products/versions through ConfigurationProduct
-- Integrations and Standards
-	- Integration points and referenced standards (basic list + relationships)
-- Documentation (/docs)
-	- Markdown-driven docs rendered in-app (fenced code, tables)
-	- Responsive docs layout with sticky sidebar on desktop and a mobile drawer
-- Accessibility and printing
-	- Tailwind-based, responsive UI
-	- Print-optimized pages for clean exports and sharing
+- **Catalog your tech stack** — agencies → functional areas → functions → components → configurations
+- **Track vendor footprint** — link products and versions to each configuration
+- **Benchmark across agencies** — compare who uses what, and where
+- **AI-assisted enrichment** — Claude-powered agents research agency facts, with human review before any data is saved
+- **Public read API** — unauthenticated JSON endpoints at `/api/v1/` for agencies, vendors, components, functions, and configurations
+- **In-app documentation** — Markdown docs rendered at `/docs`
 
-Architecture and tech
-- Backend: Flask (Python), SQLAlchemy ORM, Flask-Migrate (Alembic)
-- Frontend: Jinja templates, Tailwind CSS, HTMX for dynamic fragments
-- Auth: OAuth (Microsoft/Google) support in the hosted build
-- Data: JSON bootstrap files and loader scripts in /data and /scripts
-- Tests: Pytest stubs for health checks and core pages
+---
 
-Repository structure (selected)
-- app/models/tran.py — Core data models (Agency, FunctionalArea, Function, Component, Vendor, Product, ProductVersion, Configuration, etc.)
-- app/routes/ — Flask blueprints and HTML fragment endpoints
-- app/templates/ — Jinja templates (pages and fragments)
-- data/ — Seed JSON files for agencies, vendors, components, functions, etc.
-- scripts/ — One-off data loader scripts
-- tests/ — Basic tests and scaffolding
+## Core domain model
 
-Getting started (local development)
-1) Python environment
-	 - Python 3.12+ recommended
-	 - Create a virtual environment and install dependencies:
-		 - python -m venv .venv
-		 - source .venv/bin/activate
-		 - pip install -r requirements.txt
-	 - Note: Markdown is required for /docs (tracked in requirements.txt)
+```
+Agency
+  └── Configuration (Agency + Function + Component — the benchmark record)
+        ├── ConfigurationProduct → Product → Vendor
+        └── ServiceType (Fixed, Rail, Paratransit, OnDemand)
 
-2) Run the app
-	 - export FLASK_APP=run.py
-	 - flask run
-	 - Visit http://localhost:5000
+FunctionalArea → Function → Component
+Vendor → Product → ProductVersion
+```
 
-3) Optional: load seed data
-	 - Review /scripts and /data for example loaders
-	 - Ensure database migrations are initialized (Flask-Migrate/Alembic)
+---
 
-Modeling and benchmarking tips
-- Use Functional Areas and Functions to define business capabilities and their criticality
-- Use Components to represent systems; relate them to Functions
-- Create Configurations for each real deployment at an Agency; include dates and status
-- Link Products and Product Versions to Configurations via ConfigurationProduct to track vendor footprint
-- Use the Vendors pages to see product counts and active usage across agencies/functions
-- Use the print pages to circulate summaries in meetings or attach to reports
+## Key features
 
-Security and access
-- Public pages: landing and agency list (config-dependent)
-- Auth-protected pages for management and benchmarking screens
-- OAuth (Microsoft/Google) supported for hosted builds; registration limited to known agency/vendor domains
-- Super admin role (config) with full access; agency/vendor-level roles planned/available per route configuration
+### Benchmarking
+- Configurations tie an agency, function, and component together with status, dates, and notes
+- Vendor pages show product usage across agencies grouped by functional area
+- Print-optimized pages for functional areas and functions (`/functional-areas/print`, `/functions/print`)
 
-Roadmap (abridged)
-- Deeper benchmarking dashboards (cross-agency comparisons, trends)
-- Enhanced integration mapping and standards coverage
-- Vendor/agency news feeds and alerts
-- Collaboration features for community curation
+### Public API (`/api/v1/`)
+Unauthenticated read-only JSON:
+```
+GET /api/v1/agencies
+GET /api/v1/agencies/<id>
+GET /api/v1/vendors
+GET /api/v1/vendors/<id>
+GET /api/v1/components
+GET /api/v1/components/<id>
+GET /api/v1/functions
+GET /api/v1/functions/<id>
+GET /api/v1/configurations
+GET /api/v1/configurations/<id>
+GET /api/v1/search?q=<term>&type=agency,vendor,...
+```
 
-Contributing
-We welcome contributions from public transit teams and industry partners. Please open issues for bugs and feature requests, and submit pull requests for proposed changes. See the project docs (/docs) for domain notes and contribution guidelines as they evolve.
+### AI agents
+Claude-powered research agents (`app/agents/`) enrich database records using web search:
 
-Hosted option
-See-Tran.org provides a hosted instance with community-sourced data enhanced by AI agents for discovery and normalization. Contact the maintainers if you’d like to participate or pilot.
+```bash
+flask agent run agency --id 42            # Research an agency, apply diff
+flask agent run agency --all --dry-run    # Preview changes for all agencies
+flask agent status                        # Show run history
+```
+
+The agency agent is fully implemented. Vendor and component agents are planned for Phase 2.
+
+Agents never auto-commit — all changes require human review. The `/admin/agents/agency` UI shows the proposed diff before committing. The `/admin/suggestions` page provides a reviewer workflow for batch review.
+
+### Admin tools
+- `/admin/agents/agency` — run agent, inspect diff, commit or discard
+- `/admin/suggestions` — review, accept, or reject agent-proposed field changes
+- `/admin/` — dashboard with links to all admin tools
+
+---
+
+## Getting started (local)
+
+```bash
+git clone https://github.com/your-org/see-tran.git
+cd see-tran
+
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+npm install && npm run build
+
+export SECRET_KEY=dev-secret
+flask db upgrade
+flask seed all   # optional sample data
+flask run
+```
+
+Visit http://localhost:5000. See `CONTRIBUTING.md` for the full development guide.
+
+---
+
+## Deployment
+
+Deploys to [Railway](https://railway.com) with a managed PostgreSQL database:
+
+1. Create a Railway project, connect your repo, add a PostgreSQL service
+2. Set `SECRET_KEY`, `DB_TYPE=postgres`, `FLASK_ENV=production`, `CLAUDE_API_KEY`
+3. Push — Railway builds the Dockerfile, runs migrations, starts Gunicorn
+
+See `docs/README_setup.md` for full instructions including Docker self-hosting.
+
+---
+
+## Architecture
+
+| Layer | Stack |
+|-------|-------|
+| Backend | Flask, SQLAlchemy, Alembic |
+| Frontend | Jinja2, Tailwind CSS, HTMX |
+| Auth | OAuth (Google + Microsoft) |
+| Agents | Anthropic SDK, web search tool |
+| Database | PostgreSQL (production), SQLite (dev) |
+| Deploy | Railway + Docker |
+
+```
+app/
+  agents/         AI research agents (Anthropic SDK)
+  models/tran.py  All domain models
+  routes/         Flask blueprints
+  templates/      Jinja2 + HTMX
+  mcp_server.py   MCP tools for Claude Code
+```
+
+---
+
+## Contributing
+
+See `CONTRIBUTING.md` for setup, testing, seeding, agent usage, code conventions, and PR guidelines.
+
+**Hosted instance:** See-Tran.org provides a community-sourced dataset enhanced by AI agents. Contact the maintainers to participate or pilot.

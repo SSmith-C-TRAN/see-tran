@@ -1,0 +1,12 @@
+# railway.toml — Railway deployment configuration
+# https://docs.railway.com/reference/config-as-code
+
+[build]
+builder = "dockerfile"
+
+[deploy]
+startCommand = "flask db upgrade && gunicorn -w 4 -b 0.0.0.0:$PORT run:app"
+healthcheckPath = "/health"
+healthcheckTimeout = 300
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 10

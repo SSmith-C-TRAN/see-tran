@@ -274,28 +274,35 @@ GET /api/v1/configurations/<id>  → configuration detail + products + service t
 
 ---
 
-### Phase 5 — Deployment & Release
+### Phase 5 — Deployment & Release (Complete)
+
+> **Verification notes (2026-04-08):**
+> - 5.1: `Dockerfile` (python:3.12-slim, builds CSS, gunicorn) + `docker-compose.yml` (postgres:16 + web) ✓
+> - 5.2: Targeting [Railway](https://railway.com) — `railway.toml` with Dockerfile builder, `$PORT` support, healthcheck. Migrations run at startup via `startCommand`. PostgreSQL added as Railway service. ✓
+> - 5.3: `.env.example` documents all required and optional vars. Unused vars (Twilio, AWS S3) omitted. ✓
+> - 5.4: `LICENSE` (MIT) ✓. `README.md` updated. `CONTRIBUTING.md` added. See `docs/README_setup.md` for deployment guide. ✓
 
 **5.1 — Containerize**
 
-Add `Dockerfile` and `docker-compose.yml` for local dev with PostgreSQL. Production Dockerfile with Gunicorn.
+`Dockerfile` and `docker-compose.yml` for local dev with PostgreSQL. Production Dockerfile with Gunicorn.
 
 **5.2 — Deploy Target**
 
-Recommend [Fly.io](https://fly.io) as primary deploy target:
-- Add `fly.toml`
-- Add `Procfile` for Heroku/Render compatibility
-- PostgreSQL via Fly managed Postgres or Supabase
+[Railway](https://railway.com) as primary deploy target:
+- `railway.toml` — Dockerfile builder, `startCommand` runs migrations then gunicorn on `$PORT`
+- PostgreSQL via Railway managed Postgres (auto-injects `DATABASE_URL`)
+- See `docs/README_setup.md` for full deploy instructions
 
 **5.3 — Environment Rationalization**
 
-Audit all env vars. Remove any that are unused (Twilio, AWS S3 if S3 isn't used). Document required vs. optional in `.env.example`.
+`.env.example` at repo root documents all required and optional variables. Unused vars (Twilio, AWS S3) removed from config.
 
 **5.4 — License & Governance**
 
-- Add `LICENSE` (MIT recommended for community adoption)
-- Update root `README.md` with: what the app does, how to deploy, how to contribute, who it's for
-- Tag `v0.1.0` after phases 0–2 are complete
+- `LICENSE` — MIT
+- `README.md` updated with features, agents, API, and deployment
+- `CONTRIBUTING.md` — local setup, testing, seeding, agents, conventions, PR guidelines
+- Tag `v0.1.0` — pending
 
 ---
 
@@ -321,42 +328,31 @@ Phases 0 and 1 can be done in a single session. Phase 2 requires Anthropic API a
 | Fleet field on Configuration | Done (exists) | Generalize in Phase 1.2, remove C-TRAN values |
 | Functional areas/functions UI | Done | No change |
 | Agency lookup/search | Done | No change |
-| Agency deep research agent | In progress | Simplify and complete in Phase 2 |
+| Agency deep research agent | Done | SDK-direct, run() + research(), audit log |
 | Vendor product deep research | Not started | Implement in Phase 2 |
-| Full-text search | Not started | Phase 4.2 |
-| Advanced filtering | Partial | Extend in Phase 4 |
+| Full-text search | Done | /api/v1/search ILIKE across entities |
+| Advanced filtering | Done | /api/v1/configurations filterable |
 | Similar agencies recommendations | Not started | Post-v1 (requires usage data) |
 | Technology stack comparison | Not started | Post-v1 |
 | Integration compatibility matrix | Not started | Post-v1 |
 
 ---
 
-## Files to Create
+## Files Created / Deleted (tracking)
 
-| File | Purpose |
-|------|---------|
-| `CLAUDE.md` | AI agent navigation guide |
-| `mcp.json` | MCP server registration |
-| `app/mcp_server.py` | MCP tool definitions |
-| `app/routes/vendor_portal.py` | Vendor portal blueprint |
-| `app/routes/api.py` | Consolidated public API |
-| `app/models/suggestion.py` | Agent suggestion review model |
-| `Dockerfile` | Container build |
-| `docker-compose.yml` | Local dev with Postgres |
-| `fly.toml` | Fly.io deployment |
-| `Procfile` | Heroku/Render compatibility |
-| `.env.example` | Required env var documentation |
-| `LICENSE` | MIT license |
-| `CONTRIBUTING.md` | Contribution guide |
-| `docs/api.md` | Public API documentation |
-
-## Files to Delete
-
-| File | Reason |
+| File | Status |
 |------|--------|
-| `app/agents/vendor_agent.py` | 3-line stub, rewrite from scratch |
-| `app/agents/component_agent.py` | 3-line stub, rewrite from scratch |
-| `app/agents/tools/image_fetch.py` | Disabled, unused |
-| `app/agents/providers/` (directory) | Collapsed into direct SDK usage |
-| `app/agents/base.py` | Collapsed into per-agent modules + shared utility |
-| `docs/README_next.md` | Superseded by this plan; items tracked here |
+| `CLAUDE.md` | ✓ Done |
+| `mcp.json` + `app/mcp_server.py` | ✓ Done |
+| `app/routes/api_v1.py` | ✓ Done — public read API at `/api/v1/` |
+| `app/agents/utils.py` | ✓ Done — AgentResult, LogEntry, log_agent_event |
+| `Dockerfile` + `docker-compose.yml` | ✓ Done |
+| `railway.toml` | ✓ Done — replaces planned fly.toml |
+| `.env.example` | ✓ Done |
+| `LICENSE` | ✓ Done — MIT |
+| `CONTRIBUTING.md` | ✓ Done |
+| `docs/README_setup.md` | ✓ Updated — deployment guide |
+| `app/agents/base.py` + `providers/` + `tools/` | ✓ Deleted — replaced by direct SDK |
+| `app/agents/vendor_agent.py` | Stub only — Phase 2 implementation pending |
+| `app/agents/component_agent.py` | Stub only — Phase 2 implementation pending |
+| `app/routes/vendor_portal.py` | Not started — Phase 3 |

@@ -12,6 +12,11 @@ import click
 app = create_app()
 
 
+@app.get('/health')
+def health():
+    return {'ok': True}, 200
+
+
 @app.shell_context_processor
 def make_shell_context():
     return {

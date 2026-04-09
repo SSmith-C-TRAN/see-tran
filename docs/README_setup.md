@@ -1,77 +1,72 @@
-# Setup
+# Deployment Guide
 
-Bootstrapped with `new_flask.sh`.
+See-Tran is designed to deploy on [Railway](https://railway.com) with a managed PostgreSQL database. It also runs on any platform that supports Docker.
 
-## Development Setup
+---
 
-```bash
-# Activate virtual environment
-pyenv activate see-tran
+## Railway (recommended)
 
-# Install dependencies (if you deleted requirements.txt)
-# pip install -r requirements.txt
+1. Create a new Railway project and connect your GitHub repo
+2. Add a **PostgreSQL** service — Railway injects `DATABASE_URL` automatically
+3. Set environment variables in Railway's dashboard:
 
-# Start frontend watcher (in a separate terminal)
-npm run dev
-
-# Run development server
-flask run
+```
+SECRET_KEY=<random string>
+CLAUDE_API_KEY=sk-ant-...        # Required for agent features
+DB_TYPE=postgres
+FLASK_ENV=production
 ```
 
-## Database Setup
+4. Push to deploy — Railway builds the Dockerfile, runs `flask db upgrade`, and starts Gunicorn via `railway.toml`
 
-This project supports both SQLite (default) and PostgreSQL.
+The `healthcheckPath = "/health"` in `railway.toml` requires a `/health` route (returns 200). Add it to `run.py` if not present.
 
-### Using SQLite (default)
-No additional setup required. The database will be created at `instance/app.db` when you run:
+---
+
+## Docker (self-hosted)
+
 ```bash
-flask db init
-flask db migrate -m "Initial migration"
-flask db upgrade
+# Local development with PostgreSQL
+docker compose up
+
+# Production build
+docker build -t see-tran .
+docker run -p 8000:8000 \
+  -e SECRET_KEY=your-secret \
+  -e DATABASE_URL=postgresql://... \
+  -e FLASK_ENV=production \
+  see-tran
 ```
 
-### Using PostgreSQL
-1. Install and start PostgreSQL on your system
-2. Create a database: `createdb see-tran`
-3. Update the `.env` file:
-   ```
-   DB_TYPE=postgres
-   DB_USER=your_username
-   DB_PASSWORD=your_password
-   DB_NAME=see-tran
-   ```
-4. Run migrations:
-   ```bash
-   flask db init
-   flask db migrate -m "Initial migration"
-   flask db upgrade
-   ```
+`docker-compose.yml` starts both a `postgres:16` container and the web app. The web container runs migrations at startup.
 
-## Frontend Development
+---
 
-### Tailwind CSS
-- **Development**: `npm run dev` - Watches for changes and rebuilds CSS
-- **Production**: `npm run build` - Builds minified CSS and copies HTMX
+## Environment variables
 
-### HTMX
-HTMX is managed via npm and copied to static files during build. The library is available at `/static/js/htmx.min.js`.
+See `.env.example` at the repo root for the full list. Minimum required:
 
-## Testing
+| Variable | Required | Notes |
+|----------|----------|-------|
+| `SECRET_KEY` | Yes | Any random string |
+| `DATABASE_URL` | Prod | PostgreSQL URL; defaults to SQLite in dev |
+| `DB_TYPE` | Prod | Set to `postgres` when using PostgreSQL |
+| `CLAUDE_API_KEY` | Agents | Anthropic API key for agent features |
+| `FLASK_ENV` | Prod | Set to `production` |
+
+---
+
+## First-time setup
+
+After deploying, run these once (or include in a Railway release command):
+
 ```bash
-pytest
+flask db upgrade    # Apply all migrations
+flask seed all      # Optional: load sample data
 ```
 
-## Production Deployment
-For production, remember to:
-1. Set a strong `SECRET_KEY` in the `.env` file
-2. Set `FLASK_DEBUG=0` in the `.env` file
-3. Use a proper database (PostgreSQL recommended)
-4. Build assets for production: `npm run build`
-5. Use a production WSGI server like gunicorn
+---
 
-## Node.js Version
-This project targets Node.js 20+. Use nvm/fnm for version management:
-```bash
-nvm use  # or fnm use
-```
+## Local development
 
+See `CONTRIBUTING.md` for the full local dev setup guide.

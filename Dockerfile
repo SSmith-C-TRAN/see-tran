@@ -25,5 +25,5 @@ ENV FLASK_ENV=production
 ENV PYTHONUNBUFFERED=1
 
 EXPOSE 8000
-# Run migrations then start — DATABASE_URL must be set at runtime
-CMD flask db upgrade && gunicorn -w 4 -b 0.0.0.0:8000 run:app
+# Run migrations then start — DATABASE_URL and PORT are injected by Railway
+CMD flask db upgrade && gunicorn -w 4 -b 0.0.0.0:${PORT:-8000} run:app
