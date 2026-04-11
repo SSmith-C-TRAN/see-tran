@@ -5,7 +5,7 @@
 builder = "dockerfile"
 
 [deploy]
-startCommand = "flask db upgrade && gunicorn -w 4 -b 0.0.0.0:$PORT run:app"
+startCommand = "flask db upgrade && echo '--- migration done, starting gunicorn on port '$PORT' ---' && gunicorn --log-level debug -w 2 -b 0.0.0.0:$PORT run:app"
 healthcheckPath = "/health"
 healthcheckTimeout = 300
 restartPolicyType = "on_failure"
