@@ -52,9 +52,20 @@ def log_agent_event(result: AgentResult, input_data: dict, agent_type: str) -> N
     if has_request_context():
         user_email = session.get('user', {}).get('email', 'anonymous')
 
+    # Extract token counts from the llm_call log entry if present
+    input_tokens = None
+    output_tokens = None
+    for log in result.logs:
+        if log.event_type == 'llm_call' and isinstance(log.details, dict):
+            input_tokens = log.details.get('input_tokens')
+            output_tokens = log.details.get('output_tokens')
+            break
+
     entry = {
         'timestamp': datetime.utcnow().isoformat(),
         'agent_type': agent_type,
+        'provider': 'anthropic',
+        'model': result.model_used,
         'user_email': user_email,
         'input': input_data,
         'result_summary': {
@@ -63,7 +74,7 @@ def log_agent_event(result: AgentResult, input_data: dict, agent_type: str) -> N
             'fields_set': list(result.draft.keys()),
             'error': result.error,
         },
-        'model': result.model_used,
+        'tokens': {'input': input_tokens, 'output': output_tokens},
         'log_count': len(result.logs),
     }
 

@@ -13,6 +13,10 @@
     </nav>
     <h1 class="text-3xl font-bold text-white mb-2">Agency Agent</h1>
     <p class="text-slate-400">Use AI to research and populate transit agency data. Review proposed changes before committing.</p>
+    <div class="mt-3 inline-flex items-center space-x-2 px-3 py-1.5 bg-slate-800 border border-slate-700 rounded-lg text-sm">
+      <span class="text-slate-500">Model:</span>
+      <span class="text-slate-200 font-mono">Anthropic / {{ agent_model }}</span>
+    </div>
   </div>
 
   <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
@@ -25,10 +29,10 @@
         <h2 class="text-xl font-semibold text-white mb-4">Research New Agency</h2>
         <form id="new-agency-form" class="space-y-4">
           <div>
-            <label class="block text-sm text-slate-400 mb-2">Agency Name</label>
-            <input type="text" 
-                   id="new-agency-name" 
-                   placeholder="e.g., TriMet, WMATA, LA Metro"
+            <label class="block text-sm text-slate-400 mb-2">Agency Name or Search Query</label>
+            <input type="text"
+                   id="new-agency-name"
+                   placeholder="e.g., TriMet, WMATA, transit agency in Denver CO"
                    class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-3 text-white placeholder-slate-500 focus:border-blue-500 focus:outline-none">
           </div>
           <button type="submit" 
@@ -120,9 +124,9 @@
         </div>
       </div>
 
-      <!-- Skipped Fields -->
+      <!-- Not Found Fields -->
       <div id="skipped-panel" class="hidden glass-effect rounded-xl p-6 border border-slate-700/50">
-        <h2 class="text-xl font-semibold text-white mb-4">Skipped (Low Confidence)</h2>
+        <h2 class="text-xl font-semibold text-white mb-4">Not Found</h2>
         <div id="skipped-content" class="space-y-2 text-sm">
           <!-- Skipped fields rendered by JS -->
         </div>
@@ -277,6 +281,15 @@ cancelBtn.addEventListener('click', () => {
 });
 
 // UI Helpers
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 function setLoading(loading) {
   const btns = [runNewBtn, runUpdateBtn];
   btns.forEach(btn => {
@@ -304,7 +317,7 @@ function showSuccess(result) {
   statusIcon.className = 'w-10 h-10 rounded-full flex items-center justify-center bg-green-600';
   statusIcon.innerHTML = '<svg class="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>';
   statusTitle.textContent = result.is_update ? 'Update Ready' : 'New Agency Data Ready';
-  statusMessage.textContent = `Using ${result.provider_used} (${result.model_used})`;
+  statusMessage.textContent = `Using Anthropic (${result.model_used})`;
   
   // Show draft
   renderDraft(result.draft, result.is_update);
@@ -314,11 +327,16 @@ function showSuccess(result) {
     renderDiff(result.diff);
   }
   
-  // Show skipped fields
-  if (result.skipped_fields && Object.keys(result.skipped_fields).length > 0) {
-    renderSkipped(result.skipped_fields);
+  // Show fields the agent didn't find
+  const allFields = ['name', 'short_name', 'location', 'description', 'website', 'ceo',
+                     'address_hq', 'phone_number', 'contact_email', 'transit_map_link',
+                     'email_domain', 'gtfs_feed_url',
+                     'annual_ridership', 'fleet_size', 'service_area_population', 'ntd_id'];
+  const notFound = allFields.filter(f => !result.draft[f]);
+  if (notFound.length > 0) {
+    renderSkipped(notFound);
   }
-  
+
   // Show action buttons
   document.getElementById('action-panel').classList.remove('hidden');
 }
@@ -340,39 +358,36 @@ function renderDraft(draft, isUpdate) {
   const panel = document.getElementById('draft-panel');
   const content = document.getElementById('draft-content');
   const badge = document.getElementById('update-badge');
-  
+
   panel.classList.remove('hidden');
   badge.classList.toggle('hidden', !isUpdate);
-  
-  const fields = ['name', 'short_name', 'location', 'description', 'website', 'ceo', 
-                  'address_hq', 'phone_number', 'contact_email', 'transit_map_link', 'email_domain'];
-  
+
+  const coreFields = ['name', 'short_name', 'location', 'description', 'website', 'ceo',
+                      'address_hq', 'phone_number', 'contact_email', 'transit_map_link',
+                      'email_domain', 'gtfs_feed_url'];
+  const metaFields = ['annual_ridership', 'fleet_size', 'service_area_population', 'ntd_id'];
+
+  function fieldRow(field, value) {
+    const label = field.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+    const safeLabel = escapeHtml(label);
+    const safeValue = escapeHtml(String(value));
+    return `<div class="flex justify-between items-start p-3 bg-slate-800/50 rounded-lg">
+      <span class="text-slate-400 text-sm">${safeLabel}</span>
+      <span class="text-white text-sm text-right max-w-xs truncate" title="${safeValue}">${safeValue}</span>
+    </div>`;
+  }
+
   let html = '';
-  fields.forEach(field => {
-    if (draft[field]) {
-      const label = field.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-      html += `
-        <div class="flex justify-between items-start p-3 bg-slate-800/50 rounded-lg">
-          <span class="text-slate-400 text-sm">${label}</span>
-          <span class="text-white text-sm text-right max-w-xs truncate" title="${draft[field]}">${draft[field]}</span>
-        </div>`;
-    }
-  });
-  
-  // Show image fetch status
-  if (draft._logo_fetched) {
-    html += `<div class="flex items-center space-x-2 p-3 bg-green-900/20 rounded-lg text-green-300 text-sm">
-      <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>
-      <span>Logo fetched</span>
-    </div>`;
+  coreFields.forEach(field => { if (draft[field]) html += fieldRow(field, draft[field]); });
+
+  const metaFound = metaFields.filter(f => draft[f]);
+  if (metaFound.length > 0) {
+    html += `<div class="mt-2 pt-2 border-t border-slate-700/50">
+      <p class="text-xs text-slate-500 uppercase tracking-wider mb-2 px-1">Ridership &amp; Scale</p>`;
+    metaFound.forEach(field => { html += fieldRow(field, draft[field]); });
+    html += `</div>`;
   }
-  if (draft._header_fetched) {
-    html += `<div class="flex items-center space-x-2 p-3 bg-green-900/20 rounded-lg text-green-300 text-sm">
-      <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>
-      <span>Header fetched</span>
-    </div>`;
-  }
-  
+
   content.innerHTML = html || '<p class="text-slate-500">No data extracted</p>';
 }
 
@@ -385,13 +400,16 @@ function renderDiff(diff) {
   let html = '';
   for (const [field, change] of Object.entries(diff)) {
     const label = field.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+    const safeLabel = escapeHtml(label);
+    const safeOld = escapeHtml(change.old || '(empty)');
+    const safeNew = escapeHtml(change.new || '(empty)');
     html += `
       <div class="p-3 bg-slate-800/50 rounded-lg">
-        <div class="text-sm text-slate-400 mb-1">${label}</div>
+        <div class="text-sm text-slate-400 mb-1">${safeLabel}</div>
         <div class="flex items-center space-x-2 text-sm">
-          <span class="text-red-400 line-through">${change.old || '(empty)'}</span>
+          <span class="text-red-400 line-through">${safeOld}</span>
           <span class="text-slate-500">→</span>
-          <span class="text-green-400">${change.new}</span>
+          <span class="text-green-400">${safeNew}</span>
         </div>
       </div>`;
   }
@@ -399,22 +417,21 @@ function renderDiff(diff) {
   content.innerHTML = html;
 }
 
-function renderSkipped(skipped) {
+function renderSkipped(notFoundFields) {
   const panel = document.getElementById('skipped-panel');
   const content = document.getElementById('skipped-content');
-  
+
   panel.classList.remove('hidden');
-  
+
   let html = '';
-  for (const [field, info] of Object.entries(skipped)) {
+  notFoundFields.forEach(field => {
     const label = field.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-    html += `
-      <div class="flex justify-between items-center p-2 bg-yellow-900/20 rounded">
-        <span class="text-yellow-300">${label}</span>
-        <span class="text-yellow-500 text-xs">${info.reason}</span>
-      </div>`;
-  }
-  
+    html += `<div class="flex justify-between items-center p-2 bg-yellow-900/20 rounded">
+      <span class="text-yellow-300">${escapeHtml(label)}</span>
+      <span class="text-yellow-500 text-xs">not found</span>
+    </div>`;
+  });
+
   content.innerHTML = html;
 }
 

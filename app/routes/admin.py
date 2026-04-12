@@ -30,8 +30,10 @@ def dashboard():
 @login_required
 def agency_agent_page():
     """Agency agent UI page."""
+    from flask import current_app
     agencies = Agency.query.order_by(Agency.name.asc()).all()
-    return render_template('admin/agency_agent.html', agencies=agencies)
+    agent_model = current_app.config['AGENT_MODELS']['agency']
+    return render_template('admin/agency_agent.html', agencies=agencies, agent_model=agent_model)
 
 
 @admin_bp.route('/api/agents/agency/run', methods=['POST'])
