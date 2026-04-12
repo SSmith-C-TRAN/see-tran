@@ -20,7 +20,8 @@ RUN npm run build
 ENV FLASK_ENV=production
 ENV PYTHONUNBUFFERED=1
 ENV FLASK_APP=run.py
+ENV PORT=8000
 
 EXPOSE 8000
-# Run migrations then start — DATABASE_URL and PORT are injected by Railway
-CMD echo BOOT source=Dockerfile && echo BOOT PORT=${PORT:-unset} FLASK_ENV=${FLASK_ENV:-unset} && echo BOOT running_migrations && flask db upgrade && echo BOOT migrations_complete && exec gunicorn --workers 1 --bind 0.0.0.0:${PORT:-8000} --timeout 120 --log-level info --access-logfile - --error-logfile - --capture-output run:app
+# Start web server directly; run migrations separately as a one-off task/job
+CMD echo BOOT source=Dockerfile && echo BOOT launch_gunicorn PORT=$PORT FLASK_ENV=$FLASK_ENV && exec gunicorn --workers 1 --bind 0.0.0.0:$PORT --timeout 120 --log-level info --access-logfile - --error-logfile - --capture-output run:app
