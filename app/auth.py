@@ -41,6 +41,16 @@ def _get_next_url():
     return url_for('main.index')
 
 
+def _oauth_redirect_uri(endpoint: str) -> str:
+    """Build an external callback URL using the app's preferred scheme.
+
+    In production behind a proxy, this ensures OAuth callbacks use HTTPS.
+    In development/testing, it falls back to the incoming request scheme.
+    """
+    scheme = current_app.config.get('PREFERRED_URL_SCHEME') or request.scheme
+    return url_for(endpoint, _external=True, _scheme=scheme)
+
+
 @auth_bp.route('/login')
 def login_page():
     """Login page."""
@@ -54,7 +64,7 @@ def login_google():
     session['oauth_state'] = state_token
     nonce = secrets.token_urlsafe(16)
     session['oauth_nonce'] = nonce
-    redirect_uri = url_for('auth.auth_google_callback', _external=True)
+    redirect_uri = _oauth_redirect_uri('auth.auth_google_callback')
     return _oauth.google.authorize_redirect(redirect_uri, state=state_token, nonce=nonce)
 
 
@@ -96,7 +106,7 @@ def login_microsoft():
     # Add a nonce for MS as well
     nonce = secrets.token_urlsafe(16)
     session['oauth_nonce'] = nonce
-    redirect_uri = url_for('auth.auth_ms_callback', _external=True)
+    redirect_uri = _oauth_redirect_uri('auth.auth_ms_callback')
     # Include the nonce and any optional prompt
     return _oauth.microsoft.authorize_redirect(
         redirect_uri,

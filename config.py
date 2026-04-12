@@ -54,7 +54,10 @@ class Config:
     # OAuth
     OAUTH_GOOGLE_CLIENT_ID = os.environ.get('OAUTH_GOOGLE_CLIENT_ID')
     OAUTH_GOOGLE_CLIENT_SECRET = os.environ.get('OAUTH_GOOGLE_CLIENT_SECRET')
-    OAUTH_GOOGLE_DISCOVERY_URL = os.environ.get('OAUTH_GOOGLE_DISCOVERY_URL')
+    OAUTH_GOOGLE_DISCOVERY_URL = os.environ.get(
+        'OAUTH_GOOGLE_DISCOVERY_URL',
+        'https://accounts.google.com/.well-known/openid-configuration'
+    )
 
     OAUTH_MS_CLIENT_ID = os.environ.get('OAUTH_MS_CLIENT_ID')
     OAUTH_MS_CLIENT_SECRET = os.environ.get('OAUTH_MS_CLIENT_SECRET')
